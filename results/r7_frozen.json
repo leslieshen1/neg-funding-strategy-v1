@@ -1,0 +1,23 @@
+{
+ "frozen_at": "2026-11-03 23:20:41.387199",
+ "window_selection": "IS 2025-10-28..2026-06-30",
+ "gate": {
+  "kind": "r7 (funding+basis expected income, calibrated cost)",
+  "m": 2.0
+ },
+ "exit": {
+  "selected": "X5_c48",
+  "params": {
+   "conf_h": 48
+  },
+  "reason": "only family-best interior point above baseline X5_c24 on IS (89.19 vs 88.52 ann10; tiny margin)"
+ },
+ "family_picks": {
+  "X5": "c48 (interior)",
+  "EV": "k0.25,h12 (interior after ext)",
+  "TP": "a0.04,gb0.012 (interior; edges monotone toward no-TP)",
+  "BR": "f2.0 (interior; f3.0 edge)",
+  "TIME": "H504 (interior; 720 edge)"
+ },
+ "baseline": "X5_c24 (previous frozen rule) with same gate"
+}

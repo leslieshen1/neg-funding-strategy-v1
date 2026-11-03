@@ -1,0 +1,9 @@
+calib_private/
+upstream/
+*.zip
+*.xlsx
+holdings*
+*inventory*
+*.key
+.env
+__pycache__/
