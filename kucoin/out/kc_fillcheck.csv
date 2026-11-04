@@ -1,5 +1,0 @@
-cfg,win,fills_in_missing_kucoin_hours,coin_hours_no_trade_or_absent,coin_hours_absent_candle,pos_changes
-FINAL,IS,0,153388,44304,192880
-FINAL,HO,0,80464,0,47595
-REF_ADL,IS,0,153388,44304,306771
-REF_ADL,HO,0,80464,0,91861
