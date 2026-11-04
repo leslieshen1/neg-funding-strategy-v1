@@ -43,4 +43,4 @@ FY: 年化 51.07%  笔数 1776  净利 510.7 万U
 ## 4. 代码结构
 - `repro/run_headline.py`：唯一入口。
 - `repro/lib/`：引擎和规则模块（`engine_v12s.py` 是带逐笔记账的引擎，`lib12s.py` 负责加载数据和仓位上限，`r9_run.py`/`r10_run.py` 定义口径 `cons_c0`，`run_r7.py`/`r7_lib.py` 负责成本校准和进场闸门，`v13lib.py` 是运行封装）。
-- `code/`、`results/` 等：早期轮次的代码和汇总结果，复现头条用不到。
+- `code/` 等：早期轮次的代码，复现头条用不到。
