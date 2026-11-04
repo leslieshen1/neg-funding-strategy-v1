@@ -49,7 +49,14 @@ PN = ["entry_fav_n", "entry_basis_n", "exit_fav_n", "wait_max_n", "wait_cap",
       # v12s7: use_xa 1 = per coin-hour arrays xa[0]=impact-coefficient multiplier (x sqrt_y), xa[1]=half-spread multiplier, xa[2]=EV-exit ratio (expected remaining income / close cost);
       # x_ev_k>0: EV exit fires when xa[2] < x_ev_k for x_ev_h consecutive hours | x_tp_act/x_tp_gb>0: trailing take-profit on cumulative episode funding (fraction of entry notional): armed at act, exit on give-back gb
       # x_br_fr>0: basis-reversion exit when the basis has closed >= x_br_fr of its entry gap.  All of them are OR-ed with the xmode exit.
-      "use_xa", "x_ev_k", "x_ev_h", "x_tp_act", "x_tp_gb", "x_br_fr"]
+      "use_xa", "x_ev_k", "x_ev_h", "x_tp_act", "x_tp_gb", "x_br_fr",
+      # round 9 (external audit 226d73d), ALL default 0 = round-8 behaviour: fx_fund 1 = own-impact funding NOT clipped at zero for settled negative events (a positive result is a payment), 2 = additionally applied to settled positive events;
+      # fx_eq 1 = entry/add capital budget = current equity (capital + cum PnL at the previous close) - usage, 2 = min(capital, equity) (losses reduce the budget, profits do not raise it);
+      # res_mode (window-end residual): 0 legacy flat cost, 1 = pov-respecting unwind COST (slices of the prior-hour participation budget, normal impact law per slice), 2 = conservative MTM close (legacy cost x res_mult);
+      # leg_dly 1 = spot leg fills at the NEXT hour open, 2 = perp leg fills at the next hour open (entries and exits; leg-risk sensitivity)
+      "fx_fund", "fx_eq", "res_mode", "res_mult", "leg_dly",
+      # round 9b: imp_size 1 = impact-aware sizing: entries/adds capped so that the marginal own-impact funding bump (2*k_imp*1e-2*q/OI per 8h) does not exceed the expected funding |r8| (q <= 50*|r8|*OI/k_imp); existing positions are not trimmed
+      "imp_size"]
 PI = {k: i for i, k in enumerate(PN)}
 DEFAULT = dict(entry_fav_n=0.001, entry_basis_n=1.0, exit_fav_n=0.0, wait_max_n=24, wait_cap=0.001,
                mirror_on=0, entry_fav_m=0.00012, entry_basis_m=-1.0, exit_fav_m=0.00005, wait_max_m=0, mirror_spot_trade=1, margin_m=1.0,
@@ -59,7 +66,7 @@ DEFAULT = dict(entry_fav_n=0.001, entry_basis_n=1.0, exit_fav_n=0.0, wait_max_n=
                pov_m=0.05, xmax_m=0.01, dfrac_m=0.5, exec_mode=0, vol_frac=0.0, derisk=1, derisk_tol=0.0,
                f_exitlag=0, f_markfund=0, f_coin=0, f_budget=0, f_prior=0, f_hardcap=0, f_exitpov=0, f_addonce=0, f_exitstate=0, f_mtmcap=0,
                max_adds=1, k_imp=0.0, sqrt_y=0.0, f_mtmderisk=0,
-               derisk_force=0, n_streak=1, big_thr=0.0, mkm=0.0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, cutb_sqrt=0.0, advmode=0.0, xmode=0.0, x_bad=0.0005, x_obs=0.0, x6_thr=0.0001, x7_cost=0.0, x7_h=168.0, gap_sym=0.0, cool_h=0.0, hx_off=0.0, conf_h=1.0, sch_mode=0.0, sch_w=12.0, use_xa=0.0, x_ev_k=0.0, x_ev_h=6.0, x_tp_act=0.0, x_tp_gb=0.0, x_br_fr=0.0)
+               derisk_force=0, n_streak=1, big_thr=0.0, mkm=0.0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, cutb_sqrt=0.0, advmode=0.0, xmode=0.0, x_bad=0.0005, x_obs=0.0, x6_thr=0.0001, x7_cost=0.0, x7_h=168.0, gap_sym=0.0, cool_h=0.0, hx_off=0.0, conf_h=1.0, sch_mode=0.0, sch_w=12.0, use_xa=0.0, x_ev_k=0.0, x_ev_h=6.0, x_tp_act=0.0, x_tp_gb=0.0, x_br_fr=0.0, fx_fund=0.0, fx_eq=0.0, res_mode=0.0, res_mult=3.0, leg_dly=0.0, imp_size=0.0)
 
 def mkp(**kw):
     d = dict(DEFAULT); d.update(kw)
@@ -245,6 +252,7 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
     n_ep = 0
     cand_n = np.zeros(N, dtype=np.int64); cand_f = np.zeros(N); cand_s = np.zeros(N)
     mkm = P[56]; pen = P[57]; pen_k = P[58]; fshare = P[59]; advw = P[60]; cutb_sqrt = P[61]; advmode = P[62]; xmode = P[63]; x_bad = P[64]; x_obs = P[65]; x6_thr = P[66]; x7_cost = P[67]; x7_h = P[68]; gap_sym = P[69]; cool_h = P[70]; hx_off = P[71]; conf_h = P[72]; sch_mode = P[73]; sch_w = int(P[74]); use_xa = P[75]; x_ev_k = P[76]; x_ev_h = P[77]; x_tp_act = P[78]; x_tp_gb = P[79]; x_br_fr = P[80]; exc_n = 0.0; cutb_n = 0.0
+    fx_fund = P[81]; fx_eq = P[82]; res_mode = P[83]; res_mult = P[84]; leg_dly = P[85]; imp_size = P[86]
     sch_on = np.zeros(N); sch_t0 = np.zeros(N); sch_rem = np.zeros(N); sch_last = np.full(N, -5.0)
     tk_now = np.zeros(N); tk_set = np.zeros(N); gap_ref = np.zeros(N); gap_kind = np.zeros(N); bv = np.zeros(5)
     dl_cnt = np.zeros(N)
@@ -302,9 +310,11 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                         mk_ = last_fc[n] if last_fc[n] > 0 else last_sc[n]
                 else:
                     mk_ = fc[t, n] if fc[t, n] > 0 else (last_fc[n] if last_fc[n] > 0 else last_sc[n])   # legacy: close of the settlement hour
-                if e < 0.0 and d8 > 0.0:
+                if d8 > 0.0 and (e < 0.0 or fx_fund > 1.5):
                     iv_ = ivh[t, n] if ivh[t, n] > 0 else 8.0
-                    e2 = min(e + d8 * iv_ / 8.0, 0.0); lost_f += (e2 - e) * mk_ * pos[n]; e = e2
+                    e2 = e + d8 * iv_ / 8.0
+                    if fx_fund < 0.5: e2 = min(e2, 0.0)             # legacy (round 8): the own-impact term could only cancel income, never create a payment
+                    lost_f += (e2 - e) * mk_ * pos[n]; e = e2
                 fnd = -s * e * mk_ * pos[n]
                 fund_acc[n] += fnd; tf[li] += fnd
                 if wait[n] > 0 and fnd < 0: wait_paid[n] += -fnd
@@ -489,7 +499,11 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                 cf += gp_ / fut_mid; xd[35] += gp_ * Q / spot_mid; xd[34] += Q
             x = Q / spot_mid
             if x > pos[n]: x = pos[n]
-            sp_x = spot_mid * (1 + s * cs); fp_x = fut_mid * (1 - s * cf)
+            spx_ = spot_mid; fpx_ = fut_mid
+            if t + 1 < TT:
+                if 0.5 < leg_dly < 1.5 and sv[t + 1, n] > 0: spx_ = sv[t + 1, n]
+                elif leg_dly > 1.5 and fv[t + 1, n] > 0: fpx_ = fv[t + 1, n]
+            sp_x = spx_ * (1 + s * cs); fp_x = fpx_ * (1 - s * cf)
             fs_ = (1 - mk_share) * (fee_s*fsm[n]) + mk_share * (fee_s_mk*fsm[n]); ff_ = (1 - mk_share) * fee_f + mk_share * fee_f_mk
             if use_o: fs_ = fs_o; ff_ = ff_o
             frac = x / pos[n]
@@ -577,11 +591,17 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                     if f_coin > 0.5:                     # inventory cap in coin units; USDT caps are converted with the t-1 close each hour
                         coins_cap = cap_q[n] if (cap_q[n] > 0 and s > 0) else ccap / last_sc[n]
                         room_coin = max(0.0, coins_cap - pos[n]) * spot_mid
+                        if f_coin > 1.5: room_coin = min(room_coin, max(0.0, ccap - used_n[n]))      # round 9: coin cap AND the USDT cap (never above either)
                     else:
                         room_coin = ccap - used_n[n]
                     ref_u = ucm if f_mtmcap > 1.5 else used_cap
                     if f_mtmderisk > 0.5: ref_u = max(ucm, used_cap)      # both the market-value and the cost-basis usage must stay <= capital
-                    room_cap = (capital - ref_u) / cm
+                    cap_eff = capital
+                    if fx_eq > 0.5 and t > t0:
+                        cap_eff = capital + out_cum[t - 1 - t0]
+                        if fx_eq > 1.5 and cap_eff > capital: cap_eff = capital
+                        if cap_eff < 0.0: cap_eff = 0.0
+                    room_cap = (cap_eff - ref_u) / cm
                     if s < 0:
                         r2_ = (pos_cap_frac * capital - used_pos) / cm
                         if r2_ < room_cap: room_cap = r2_
@@ -592,6 +612,10 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                     Q0r = Q0
                     if sch_mode > 0.5: Q0 = 1e300
                     Q = min(Q0, min(room_coin, room_cap))
+                    if imp_size > 0.5 and k_imp > 0.0 and s > 0 and oiv[t, n] > 0.0:
+                        e_exp_ = -r8[t, n] if (np.isfinite(r8[t, n]) and r8[t, n] < 0.0) else 0.0
+                        ri_ = 50.0 * e_exp_ * oiv[t, n] / k_imp - pos[n] * spot_mid
+                        if ri_ < Q: Q = ri_
                     if f_hardcap > 1.5:                  # soft targets (nothing forces a trim), OI on PERP notional
                         if vol_frac > 0:
                             room_v = vol_frac * dv[t, n] - pos[n] * spot_mid
@@ -669,7 +693,11 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                         gp_ = 0.0 if gap_sym > 1.5 else ((fut_mid - gap_ref[n]) if gap_sym > 0.5 else max(0.0, fut_mid - gap_ref[n]))
                         cf += gp_ / fut_mid; xd[35] += gp_ * Q / spot_mid; xd[34] += Q
                     x = Q / spot_mid
-                    sp_e = spot_mid * (1 - s * cs); fp_e = fut_mid * (1 + s * cf)
+                    spx_ = spot_mid; fpx_ = fut_mid
+                    if t + 1 < TT:
+                        if 0.5 < leg_dly < 1.5 and sv[t + 1, n] > 0: spx_ = sv[t + 1, n]
+                        elif leg_dly > 1.5 and fv[t + 1, n] > 0: fpx_ = fv[t + 1, n]
+                    sp_e = spx_ * (1 - s * cs); fp_e = fpx_ * (1 + s * cf)
                     fs_ = (1 - mk_share) * (fee_s*fsm[n]) + mk_share * (fee_s_mk*fsm[n]); ff_ = (1 - mk_share) * fee_f + mk_share * fee_f_mk
                     if use_o: fs_ = fs_o; ff_ = ff_o
                     fees = x * fp_e * ff_; cost = x * fut_mid * cf
@@ -775,6 +803,25 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
             if pos[n] > 0 and last_sc[n] > 0 and last_fc[n] > 0:
                 s = side[n]; li = 0 if s > 0 else 1; x = pos[n]
                 cs = (1 - mk_share) * (hs_s[n] * spread_mult + impact); cf = (1 - mk_share) * (hs_f[n] * spread_mult + impact)
+                diag[24] += 1.0
+                if res_mode > 0.5:
+                    qn_ = x * last_sc[n]; tr_ = t1 - 1
+                    bq_ = budget(tr_, n, exec_mode, pov, xmax, dfrac, rho, True, sq, fq, d02, d1, r2, r5, xs, ds)
+                    if res_mode > 1.5 or not (bq_ > 0.0):
+                        cs = cs * res_mult; cf = cf * res_mult                  # conservative: legacy cost x res_mult (also when there is no participation budget at all)
+                        if not (bq_ > 0.0): diag[27] += 1.0
+                    else:
+                        Qs_ = min(qn_, bq_); knots(d02[tr_, n], d1[tr_, n], r2[n], r5[n], xs, ds)
+                        if sqrt_y > 0:
+                            slf_ = sqrt_y * (xa[0, tr_, n] if use_xa > 0.5 else 1.0) * sg[tr_, n] * np.sqrt(Qs_ / max(dv[tr_, n], 1.0)); sls_ = slf_
+                        elif slip_mode > 0.5:
+                            slf_ = avg_slip(Qs_, 1.0, xs, ds); sls_ = avg_slip(Qs_, rho, xs, ds)
+                        else:
+                            slf_ = impact; sls_ = impact
+                        cs = (1 - mk_share) * (hs_s[n] * spread_mult + sls_); cf = (1 - mk_share) * (hs_f[n] * spread_mult + slf_)
+                        nh_ = np.ceil(qn_ / bq_)
+                        if nh_ > diag[25]: diag[25] = nh_
+                        diag[26] += qn_ * nh_
                 sp_x = last_sc[n] * (1 + s * cs); fp_x = last_fc[n] * (1 - s * cf)
                 fs_ = (1 - mk_share) * (fee_s*fsm[n]) + mk_share * (fee_s_mk*fsm[n]); ff_ = (1 - mk_share) * fee_f + mk_share * fee_f_mk
                 price = s * x * (fp_x - fp_avg[n]) + s * x * (sp_avg[n] - sp_x)

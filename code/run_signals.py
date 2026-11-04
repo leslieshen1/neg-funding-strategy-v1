@@ -1,13 +1,13 @@
 import os as _os
 """v12 pure engine, signal family E1-E7 x X1-X5 (pre-registered in ../REPORT_signals.md). Aggregates only; nothing per coin is written."""
-import sys, multiprocessing as mp
+import sys, os, multiprocessing as mp
 sys.path.insert(0, _os.environ.get("V12_PURE_CODE", "./upstream/v12_pure/code"))
 sys.path.insert(0, (_os.environ.get("SIGNALS_ROOT", ".") + "/code"))
 import lib12s as L12
 from lib12s import *
 import lib12s
-OUT = (_os.environ.get("SIGNALS_ROOT", ".") + "/out/")
-D = load(); N = D.N; S = 1e7; T = D.arr[0].shape[0]
+OUT = os.environ.get("NFB_OUT", (_os.environ.get("SIGNALS_ROOT", ".") + "/out/")).rstrip("/") + "/"   # output dir (env NFB_OUT; default = original path)
+D = load(); N = D.N; S = float(os.environ.get("NFB_S", 1e7)); T = D.arr[0].shape[0]
 ret, oic = spike_arrays(D); ADL_MASK, _ = trigger_mask(ret, oic, 0.10, 0.0, 24)
 ev = np.nan_to_num(D.arr[6]); r8 = D.arr[7]; fc = D.arr[4]; sc = D.arr[1]
 r8n = np.nan_to_num(r8, nan=0.0)

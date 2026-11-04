@@ -4,7 +4,7 @@ import sys; sys.path.insert(0, (_os.environ.get("SIGNALS_ROOT", ".") + "/code"))
 from r7_lib import *
 import json, os
 DF = float(os.environ.get("NFB_DERISK", "2"))   # 2 = forced de-risk obeys pov over hours (fixed engine); 1 = legacy same-hour cut-back outside the budget
-OUT7 = OUT + "r7_daily/"
+OUT7 = OUT + "r7_daily/"; os.makedirs(OUT7, exist_ok=True) if os.environ.get("NFB_OUT") else None
 YK, HM, CINFO, CRAW = build_cal("kyle"); YB, _, _, _ = build_cal("book")
 XEV_CACHE = {}
 def xa_for(scen):
@@ -25,7 +25,7 @@ def make_ok(gate_spec, scen):
     kind, m = gate_spec                                   # ("r7", m) funding+basis ; ("r7f", m) funding only, calibrated cost
     xa, Y, H_ = XA["cal"]                                  # the frozen rule always gates with the primary (calibrated) cost; the scenario only changes the REALISED execution cost
     return ~ADL_MASK & gate_r7(m, Y, H_, basis=(kind == "r7"))
-def run_cfg(gate_spec, exit_extra, scen, win, ev_basis=True):
+def run_cfg(gate_spec, exit_extra, scen, win, ev_basis=True, rkw=None):
     ok = make_ok(gate_spec, scen); ex = dict(BASEX); ex.update(exit_extra or {})
     if scen in ("bp30", "bp30c"):
         ex["derisk_force"] = DF; xa = None; imp = 30
@@ -35,7 +35,7 @@ def run_cfg(gate_spec, exit_extra, scen, win, ev_basis=True):
         if not ev_basis and ex.get("x_ev_k", 0) > 0:
             xa = xa.copy(); xa[2] = XA_NB[scen]
         imp = 30
-    return run(D, S, ok_t=ok, extra=ex, imp=imp, dl_stop=False, advmode=1.0, s24=sum24, hw=WINS[win], same_hour=True, xa=xa, **MODES["i"])
+    return run(D, S, ok_t=ok, extra=ex, imp=imp, dl_stop=False, advmode=1.0, s24=sum24, hw=WINS[win], same_hour=True, xa=xa, **MODES["i"], **(rkw or {}))
 def metrics(r, save=None):
     cum = np.concatenate([[0.0], r["cum"]]); H = len(cum) - 1; y = H / 8760.0; ep = r["ep"]; net = cum[-1]; dg = r["diag"]
     o = dict(days=H / 24, net_u=net, episodes=int(r["episodes"]), funding_u=r["funding"], fees_u=-r["fees"], slip_u=-r["cost"], traded_u=r["traded"],

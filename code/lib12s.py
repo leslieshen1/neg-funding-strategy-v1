@@ -61,7 +61,7 @@ def profile(D, days=14):
         D._prof = acc / np.maximum(cnt, 1)
     return D._prof
 
-def run(D, S, mkm=0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, ok_t=None, oilim_mask=None, universe="all", extra=None, window="1y", imp=None, dl_stop=False, advmode=0.0, s24=None, hw=None, same_hour=False, xa=None):
+def run(D, S, mkm=0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, ok_t=None, oilim_mask=None, universe="all", extra=None, window="1y", imp=None, dl_stop=False, advmode=0.0, s24=None, hw=None, same_hour=False, xa=None, capq=None, S_eff=None):
     kw = dict(CFG_V10); kw.update(extra or {}); kw.update(mkm=float(mkm), pen=pen, pen_k=pen_k, fshare=fshare, advw=advw, advmode=advmode)
     hh0, hh1 = (h0, h1) if hw is None else hw
     if same_hour: kw['f_prior'] = 0
@@ -82,9 +82,9 @@ def run(D, S, mkm=0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, ok_t=None, oili
     cap = cap_vec(D, S, universe)
     okn = np.ones((T, N), np.uint8) if ok_t is None else ok_t.astype(np.uint8)
     okn = okn * (cap > 0).astype(np.uint8)[None, :]
-    H = hh1 - hh0; used = np.zeros(H); cum = np.zeros(H); comp = np.zeros((H, 6)); epb = np.zeros((200000, 8)); diag = np.zeros(24); pos_rec = np.zeros((H, N)); xd = np.zeros(64)
+    H = hh1 - hh0; used = np.zeros(H); cum = np.zeros(H); comp = np.zeros((H, 6)); epb = np.zeros((200000, 8)); diag = np.zeros(32); pos_rec = np.zeros((H, N)); xd = np.zeros(64)
     o = D.ohlc
-    res, blocked, lost_f = E.sim(hh0, hh1, *arr, dvv, oilim, D.hs_s, D.hs_f, D.r2, D.r5, okn, np.zeros((T, N), np.uint8), cap, np.zeros(N), D.mk, np.zeros(N),
+    res, blocked, lost_f = E.sim(hh0, hh1, *arr, dvv, oilim, D.hs_s, D.hs_f, D.r2, D.r5, okn, np.zeros((T, N), np.uint8), cap, np.zeros(N), D.mk, (np.zeros(N) if capq is None else np.asarray(capq, float)),
                                  D.oiv_for("hour", CASE["lag"]), D.ivh(), D.sigma(), stk, P, used, cum, epb, comp, diag, pos_rec,
                                  o["so"], o["sh"], o["sl"], o["fo"], o["fh"], o["fl"], D.tk_s, D.tk_f, (D.dl_exit if dl_stop else np.full(D.N, 1e9)), D.dl_fin, xd, np.zeros((T, N)) if s24 is None else s24, profile(D), np.ones((3, T, N)) if xa is None else xa, getattr(D, "fsm", np.ones(D.N)))
     price, fund, fees, cost, traded, nf, ne, ar = res.sum(axis=0)
