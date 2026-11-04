@@ -59,12 +59,15 @@ def profile(D, days=14):
         D._prof = acc / np.maximum(cnt, 1)
     return D._prof
 
+MKO = {}
+LASTP = {}
 def run(D, S, mkm=0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, ok_t=None, oilim_mask=None, universe="all", extra=None, window="1y", imp=None, dl_stop=False, advmode=0.0, s24=None, hw=None, same_hour=False, xa=None, capq=None, S_eff=None):
-    kw = dict(CFG_V10); kw.update(extra or {}); kw.update(mkm=float(mkm), pen=pen, pen_k=pen_k, fshare=fshare, advw=advw, advmode=advmode)
+    kw = dict(CFG_V10); kw.update(extra or {}); kw.update(mkm=float(mkm), pen=pen, pen_k=pen_k, fshare=fshare, advw=advw, advmode=advmode); kw.update(MKO)
     hh0, hh1 = (h0, h1) if hw is None else hw
     if same_hour: kw['f_prior'] = 0
     kimp = kw.pop("k_imp", CASE["k"])
     params = R.base_params(CASE["imp"] if imp is None else imp, k_imp=kimp, **kw)
+    LASTP.clear(); LASTP.update(params)
     arr = D.causal_min_arrays() if same_hour else D.arr; stk = D.streak_arr(params.pop("streak_thr", 0.001)); P = mkp(capital=S, **params)
     T = arr[0].shape[0]; N = D.N
     oi = D.oih; oi = np.vstack([np.full((1, N), np.nan), oi[:-1]])

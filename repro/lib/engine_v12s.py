@@ -133,8 +133,10 @@ def mk_fill(entry, t, n, mode, pen, pen_k, fshare, so, sh, sl, fo, fh, fl, sc, f
     """Maker leg(s) of ONE order on the hourly bar. Limit = HOUR OPEN of the current hour (= the previous close, known at order time). Perp is the maker leg (mode 1), spot too in mode 2.
     entry (side +1): perp BUY limit at fo, spot SELL limit at so.  exit: perp SELL limit at fo, spot BUY limit at so.
     A leg is eligible only if the hourly extreme trades THROUGH the limit by pen (relative) or pen_k ticks (touch alone does not count); counted fill = fshare x quantity.
-    The other leg of the filled quantity is hedged at the ADVERSE EXTREME of the hour (high for a buy, low for a sell; never better than the normal taker price) and pays the taker fee.
-    Maker fills carry adverse selection = adverse move of the maker-leg price from the limit to the NEXT hour close (>=0).
+    The other leg of the filled quantity is hedged in the same hour and pays the taker fee. hxoff=1 (v16 default via run_headline): hedge at the normal taker model price (mid + calibrated spread/impact).
+    hxoff=0 (stress only): hedge at the ADVERSE EXTREME of the hour (high for a buy, low for a sell; never better than the normal taker price).
+    Adverse selection (advw scales it): advmode 0 = adverse move of the maker-leg price from the limit to the NEXT hour close (>=0); 1 = charged once, both-maker part only;
+    2 = PAIR basis change, both-maker part only (so it is 0 when only one leg is maker, i.e. mkm 1 or 3); 3 (v16 default) = advw x hourly half-range per maker fill.
     returns (qpair, cs_eff, cf_eff, fs_blend, ff_blend, adv_unit, elig_f, elig_s, hedge_extra_unit)"""
     Lf = fo[t, n]; Ls = so[t, n]
     ef = False; es = False
@@ -142,6 +144,7 @@ def mk_fill(entry, t, n, mode, pen, pen_k, fshare, so, sh, sl, fo, fh, fl, sc, f
         thr = pen_k * tk_f[n] if (pen_k > 0 and tk_f[n] > 0) else pen * Lf
         if entry: ef = fl[t, n] <= Lf - thr
         else: ef = fh[t, n] >= Lf + thr
+    if mode > 2.5: ef = False            # v16: mode 3 = spot maker + perp taker hedge
     if mode > 1.5 and Ls > 0 and sl[t, n] > 0 and sh[t, n] > 0:
         thr = pen_k * tk_s[n] if (pen_k > 0 and tk_s[n] > 0) else pen * Ls
         if entry: es = sh[t, n] >= Ls + thr
@@ -171,7 +174,12 @@ def mk_fill(entry, t, n, mode, pen, pen_k, fshare, so, sh, sl, fo, fh, fl, sc, f
                 advf = 0.0; advs = 0.0
                 if qb > 0 and t + 1 < TT and fc[t + 1, n] > 0 and sc[t + 1, n] > 0:
                     advf = max(0.0, (Lf - Ls) - (fc[t + 1, n] - sc[t + 1, n])) * qb / qp
-        advf *= advw; advs *= advw; Pf_e = Pf + advf; Ps_e = Ps - advs
+        if advmode > 2.5:                                # v16 advmode=3: adverse selection = advw x hourly half-range per MAKER fill, against us
+            advf = advw * 0.5 * (fh[t, n] - fl[t, n]) * fpm / qp if (fh[t, n] > 0 and fl[t, n] > 0) else 0.0
+            advs = advw * 0.5 * (sh[t, n] - sl[t, n]) * fsm / qp if (sh[t, n] > 0 and sl[t, n] > 0) else 0.0
+        else:
+            advf *= advw; advs *= advw
+        Pf_e = Pf + advf; Ps_e = Ps - advs
         cf = Pf_e / fut_mid - 1.0; cs = 1.0 - Ps_e / spot_mid
         fee_f_amt = (fpm * Lf * fee_f_mk + fph * Hp * fee_f) / qp
         fee_s_amt = (fsm * Ls * fee_s_mk + fsh * Hs * fee_s) / qp
@@ -196,7 +204,12 @@ def mk_fill(entry, t, n, mode, pen, pen_k, fshare, so, sh, sl, fo, fh, fl, sc, f
                 advf = 0.0; advs = 0.0
                 if qb > 0 and t + 1 < TT and fc[t + 1, n] > 0 and sc[t + 1, n] > 0:
                     advf = max(0.0, (fc[t + 1, n] - sc[t + 1, n]) - (Lf - Ls)) * qb / qp
-        advf *= advw; advs *= advw; Pf_e = Pf - advf; Ps_e = Ps + advs
+        if advmode > 2.5:                                # v16 advmode=3: adverse selection = advw x hourly half-range per MAKER fill, against us
+            advf = advw * 0.5 * (fh[t, n] - fl[t, n]) * fpm / qp if (fh[t, n] > 0 and fl[t, n] > 0) else 0.0
+            advs = advw * 0.5 * (sh[t, n] - sl[t, n]) * fsm / qp if (sh[t, n] > 0 and sl[t, n] > 0) else 0.0
+        else:
+            advf *= advw; advs *= advw
+        Pf_e = Pf - advf; Ps_e = Ps + advs
         cf = 1.0 - Pf_e / fut_mid; cs = Ps_e / spot_mid - 1.0
         fee_f_amt = (fpm * Lf * fee_f_mk + fph * Hp * fee_f) / qp
         fee_s_amt = (fsm * Ls * fee_s_mk + fsh * Hs * fee_s) / qp
