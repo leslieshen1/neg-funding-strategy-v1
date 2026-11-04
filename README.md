@@ -19,7 +19,7 @@
 | `NFB_CAP_FILE` | 逐币上限 CSV，**由执行团队提供**，不在仓库。三列：`fut_symbol,cap_usdt,cap_qty_token`。格式见 `repro/cap_file_example.csv`（假数字） |
 | `NFB_ROOT` | 输出根目录（可选，默认当前目录），结果写到 `$NFB_ROOT/out/` |
 
-数据来源：全部是币安公开数据（data.binance.vision 的永续/现货 1h K 线、资金费率历史、OI 与 metrics；fapi 的 exchangeInfo）。冲击校准表用 `code/calib_dl.py bd|ag <币清单>` 从公开 bookDepth / aggTrades 生成。币清单就是上限文件里的 `fut_symbol`。原始数据下载并合并成 `dataset.npz` 的脚本还没有放进本仓库，目前由研究方直接提供构建好的 `NFB_DATA` 目录。
+数据来源：全部是币安公开数据（data.binance.vision 的永续/现货 1h K 线、资金费率历史、OI 与 metrics；fapi 的 exchangeInfo）。冲击校准表用 `repro/calib/calib_dl.py bd|ag <币清单>` 从公开 bookDepth / aggTrades 生成。币清单就是上限文件里的 `fut_symbol`。原始数据下载并合并成 `dataset.npz` 的脚本还没有放进本仓库，目前由研究方直接提供构建好的 `NFB_DATA` 目录。
 
 ## 3. 复现命令
 ```
@@ -43,4 +43,4 @@ FY: 年化 51.07%  笔数 1776  净利 510.7 万U
 ## 4. 代码结构
 - `repro/run_headline.py`：唯一入口。
 - `repro/lib/`：引擎和规则模块（`engine_v12s.py` 是带逐笔记账的引擎，`lib12s.py` 负责加载数据和仓位上限，`r9_run.py`/`r10_run.py` 定义口径 `cons_c0`，`run_r7.py`/`r7_lib.py` 负责成本校准和进场闸门，`v13lib.py` 是运行封装）。
-- `code/` 等：早期轮次的代码，复现头条用不到。
+- `repro/calib/calib_dl.py`：从币安公开 bookDepth / aggTrades 生成冲击校准表（独立脚本，复现头条不需要运行）。
