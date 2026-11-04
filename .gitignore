@@ -7,3 +7,10 @@ holdings*
 *.key
 .env
 __pycache__/
+
+# 5B 私有中间文件
+evstat/
+*.pkl
+mkt/
+ev_stats.py
+ev2.py
