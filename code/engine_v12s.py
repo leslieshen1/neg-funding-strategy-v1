@@ -56,7 +56,10 @@ PN = ["entry_fav_n", "entry_basis_n", "exit_fav_n", "wait_max_n", "wait_cap",
       # leg_dly 1 = spot leg fills at the NEXT hour open, 2 = perp leg fills at the next hour open (entries and exits; leg-risk sensitivity)
       "fx_fund", "fx_eq", "res_mode", "res_mult", "leg_dly",
       # round 9b: imp_size 1 = impact-aware sizing: entries/adds capped so that the marginal own-impact funding bump (2*k_imp*1e-2*q/OI per 8h) does not exceed the expected funding |r8| (q <= 50*|r8|*OI/k_imp); existing positions are not trimmed
-      "imp_size"]
+      "imp_size",
+      # round 10 (two-stage exit, default off): x2_frac>0 = when the exit CONDITION has held x2_conf1 consecutive hourly checks (1 = immediately) close the fraction x2_frac of the position at once (pov-limited, worked off over the following hours),
+      # once per episode; the remainder is closed by the normal exit (conf_h consecutive checks). A pending target is cancelled if the position is added to.
+      "x2_frac", "x2_conf1"]
 PI = {k: i for i, k in enumerate(PN)}
 DEFAULT = dict(entry_fav_n=0.001, entry_basis_n=1.0, exit_fav_n=0.0, wait_max_n=24, wait_cap=0.001,
                mirror_on=0, entry_fav_m=0.00012, entry_basis_m=-1.0, exit_fav_m=0.00005, wait_max_m=0, mirror_spot_trade=1, margin_m=1.0,
@@ -66,7 +69,7 @@ DEFAULT = dict(entry_fav_n=0.001, entry_basis_n=1.0, exit_fav_n=0.0, wait_max_n=
                pov_m=0.05, xmax_m=0.01, dfrac_m=0.5, exec_mode=0, vol_frac=0.0, derisk=1, derisk_tol=0.0,
                f_exitlag=0, f_markfund=0, f_coin=0, f_budget=0, f_prior=0, f_hardcap=0, f_exitpov=0, f_addonce=0, f_exitstate=0, f_mtmcap=0,
                max_adds=1, k_imp=0.0, sqrt_y=0.0, f_mtmderisk=0,
-               derisk_force=0, n_streak=1, big_thr=0.0, mkm=0.0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, cutb_sqrt=0.0, advmode=0.0, xmode=0.0, x_bad=0.0005, x_obs=0.0, x6_thr=0.0001, x7_cost=0.0, x7_h=168.0, gap_sym=0.0, cool_h=0.0, hx_off=0.0, conf_h=1.0, sch_mode=0.0, sch_w=12.0, use_xa=0.0, x_ev_k=0.0, x_ev_h=6.0, x_tp_act=0.0, x_tp_gb=0.0, x_br_fr=0.0, fx_fund=0.0, fx_eq=0.0, res_mode=0.0, res_mult=3.0, leg_dly=0.0, imp_size=0.0)
+               derisk_force=0, n_streak=1, big_thr=0.0, mkm=0.0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, cutb_sqrt=0.0, advmode=0.0, xmode=0.0, x_bad=0.0005, x_obs=0.0, x6_thr=0.0001, x7_cost=0.0, x7_h=168.0, gap_sym=0.0, cool_h=0.0, hx_off=0.0, conf_h=1.0, sch_mode=0.0, sch_w=12.0, use_xa=0.0, x_ev_k=0.0, x_ev_h=6.0, x_tp_act=0.0, x_tp_gb=0.0, x_br_fr=0.0, fx_fund=0.0, fx_eq=0.0, res_mode=0.0, res_mult=3.0, leg_dly=0.0, imp_size=0.0, x2_frac=0.0, x2_conf1=1.0)
 
 def mkp(**kw):
     d = dict(DEFAULT); d.update(kw)
@@ -252,7 +255,8 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
     n_ep = 0
     cand_n = np.zeros(N, dtype=np.int64); cand_f = np.zeros(N); cand_s = np.zeros(N)
     mkm = P[56]; pen = P[57]; pen_k = P[58]; fshare = P[59]; advw = P[60]; cutb_sqrt = P[61]; advmode = P[62]; xmode = P[63]; x_bad = P[64]; x_obs = P[65]; x6_thr = P[66]; x7_cost = P[67]; x7_h = P[68]; gap_sym = P[69]; cool_h = P[70]; hx_off = P[71]; conf_h = P[72]; sch_mode = P[73]; sch_w = int(P[74]); use_xa = P[75]; x_ev_k = P[76]; x_ev_h = P[77]; x_tp_act = P[78]; x_tp_gb = P[79]; x_br_fr = P[80]; exc_n = 0.0; cutb_n = 0.0
-    fx_fund = P[81]; fx_eq = P[82]; res_mode = P[83]; res_mult = P[84]; leg_dly = P[85]; imp_size = P[86]
+    fx_fund = P[81]; fx_eq = P[82]; res_mode = P[83]; res_mult = P[84]; leg_dly = P[85]; imp_size = P[86]; x2_frac = P[87]; x2_conf1 = P[88]
+    x2_done = np.zeros(N); x2_tgt = np.zeros(N)
     sch_on = np.zeros(N); sch_t0 = np.zeros(N); sch_rem = np.zeros(N); sch_last = np.full(N, -5.0)
     tk_now = np.zeros(N); tk_set = np.zeros(N); gap_ref = np.zeros(N); gap_kind = np.zeros(N); bv = np.zeros(5)
     dl_cnt = np.zeros(N)
@@ -342,6 +346,7 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                         if xmode < 2.5: xe = nonneg[n] >= 24.0
                         elif xmode < 3.5: xe = since_bad[n] >= 72.0
                         elif xmode < 4.5: xe = since_bad[n] >= 168.0
+                        elif xmode > 7.5: xe = r >= 0.0                                   # r11: X8 single settlement >= 0 (latest settled rate), confirmation via conf_h
                         elif xmode > 6.5: xe = x7_h * max(0.0, -s24[t, n] / 24.0) < x7_cost
                         elif xmode > 5.5: xe = r > x6_thr
                         elif x_obs > 0.5: xe = s24[t, n] > 0.0
@@ -349,10 +354,14 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                             sr = 0.0
                             for k_ in range(24): sr += ring[n, k_]
                             xe = sr > 0.0
-                        if conf_h > 1.5:
+                        xe_raw = xe
+                        if conf_h > 1.5 or x2_frac > 0.0:
                             if xe: conf_ct[n] += 1.0
                             else: conf_ct[n] = 0.0
-                            xe = conf_ct[n] >= conf_h
+                            if conf_h > 900.0: xe = conf_ct[n] >= 2.0 and ev[t, n] != 0.0     # r11: wait for the coin's NEXT settlement after the trigger (still satisfied)
+                            elif conf_h > 1.5: xe = conf_ct[n] >= conf_h
+                        if x2_frac > 0.0 and xe_raw and x2_done[n] < 0.5 and conf_ct[n] >= x2_conf1 and pos[n] > 0:
+                            x2_done[n] = 1.0; x2_tgt[n] = pos[n] * (1.0 - x2_frac)
                         if xe: do_exit = True
                     if (not do_exit) and pos[n] > 0:                 # v12s7 candidate exits (OR-ed with the xmode exit)
                         if x_ev_k > 0.0 and use_xa > 0.5:
@@ -413,9 +422,13 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                     cur = pos[n] * spot_mid
                     if cur > lim * (1.0 + derisk_tol) + 1e-9: want_trim = cur - lim
             is_dr = False
+            is_x2 = False
             if f_mtmderisk > 0.5 and mtm_f > 0.0 and (not do_exit) and have_bar:     # capital cap at market value: trim every open position pro rata (shared participation budget applies below)
                 tr_ = mtm_f * pos[n] * spot_mid
                 if tr_ > want_trim: want_trim = tr_; is_dr = True
+            if x2_tgt[n] > 0.0 and (not do_exit) and have_bar and pos[n] > x2_tgt[n] * (1.0 + 1e-9):      # round 10: stage-1 of the two-stage exit (work the position down to the target, pov-limited)
+                tr_ = (pos[n] - x2_tgt[n]) * spot_mid
+                if tr_ > want_trim: want_trim = tr_; is_x2 = True
             forced = False
             if f_exitpov > 0.5:
                 if t >= t1 - wind_down_h: do_exit = True; forced = True      # window end: start unwinding wind_down_h before the end, at normal participation
@@ -448,7 +461,7 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                 mm = budget(tb_, n, exec_mode, pv, xm, df, rho, spot_trade, sq, fq, d02, d1, r2, r5, xs, ds)
                 if f_budget > 0.5: mm = mm - bud_used[n]
                 Q = min(Qwant, mm if mm > 0 else 0.0)
-                if derisk_force > 1.5 and (not do_exit) and want_trim > 0.0:   # v12s fix: forced de-risk OBEYS the pov / participation budget (worked off over hours); the part not yet cut is residual over-cap exposure (diagnostics xd[52..55])
+                if derisk_force > 1.5 and (not do_exit) and want_trim > 0.0 and (not is_x2):   # v12s fix: forced de-risk OBEYS the pov / participation budget (worked off over hours); the part not yet cut is residual over-cap exposure (diagnostics xd[52..55])
                     xd[52] += 1.0; xd[56] += Qwant
                     lim_n = Qpos - want_trim
                     if lim_n <= 1e-9: xd[57] += 1.0                       # zero cap this hour (volume or OI snapshot missing / zero): cap is unknown, not a real limit
@@ -706,7 +719,7 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                     if pos[n] == 0:
                         side[n] = s; sp_avg[n] = sp_e; fp_avg[n] = fp_e; ep_start[n] = t; ent_notional[n] = Q
                         fund_acc[n] = 0.0; ep_price[n] = 0.0; ep_max_u[n] = 0.0; wait[n] = 0; wait_h[n] = 0; wait_paid[n] = 0.0
-                        since_bad[n] = 0.0; nonneg[n] = 0.0; conf_ct[n] = 0.0; ev_ct[n] = 0.0; tp_peak[n] = 0.0; b_ent[n] = (fut_mid - spot_mid) / spot_mid
+                        since_bad[n] = 0.0; nonneg[n] = 0.0; conf_ct[n] = 0.0; x2_done[n] = 0.0; x2_tgt[n] = 0.0; ev_ct[n] = 0.0; tp_peak[n] = 0.0; b_ent[n] = (fut_mid - spot_mid) / spot_mid
                         for k_ in range(24): ring[n, k_] = 0.0
                         capf[n] = cm; fees_ep[n] = 0.0; nfill_ep[n] = 0.0; n_adds[n] = 0.0
                     else:
@@ -715,6 +728,7 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                         fp_avg[n] = (fp_avg[n] * pos[n] + fp_e * x) / tw
                         ent_notional[n] += Q
                         n_adds[n] += 1.0
+                        x2_tgt[n] = 0.0
                     pos[n] += x
                     if sch_mode > 0.5: sch_rem[n] = max(sch_rem[n] - Q, 0.0)
                     fees_acc[n] += fees; tfe[li] += fees; tc[li] += cost

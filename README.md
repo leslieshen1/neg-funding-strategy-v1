@@ -1,60 +1,51 @@
-# 负资金费率"现货 + 永续"套利:回测与信号研究(v1 合集,第九/九b轮更新)
+# 负资金费率"现货 + 永续"套利:回测与信号研究(v1 合集,终版:第十–十二轮更新)
 
 > 这是**研究/回测**仓库,**不是投资建议**,所有数字都是**历史模拟**,不是实盘业绩。不含实盘代码、密钥、持仓或库存数据。
 > **许可证尚未决定(没有 LICENSE 文件)**:默认保留所有权利,选定之前请勿再分发。
 
-这份 README 是**简单报告**(给新手)。完整过程与所有表格见 [`REPORT_signals.md`](REPORT_signals.md)(附录,很长;第九轮 = §9,第九b轮 = §9b)。给不懂这件事的同事看的讲解稿是另一份团队汇报(不在本仓库内)。
+这份 README 是**简单报告**(给新手)。完整过程与所有表格见 [`REPORT_signals.md`](REPORT_signals.md)(附录,很长;第九轮 = §9,第九b轮 = §9b)。给不懂这件事的同事看的讲解稿是团队汇报终版:`team_report/`。
 
 ---
 
-## 0. 先看这个(第九 / 九b 轮结论;**取代**旧摘要里的 95% / 57%)
+## 0. 先看这个(终版结论;**取代**旧的 44.1% / 48h 出场头条)
 
-### 0.1 头条 + k_imp 敏感性(请一起看,不要只引用头条)
+> 团队汇报终版(12 页,给非专业读者):[`team_report/负费率策略团队汇报_终版.pdf`](team_report/负费率策略团队汇报_终版.pdf)(源文件 `.md` 与图在同目录)。完整过程见 `REPORT_signals.md` §9c–§9e(出场与头条)和 §9f(KuCoin r12)。
 
-**头条(保守口径 `cons`,本金 1000 万 USDT,全年 2025-10-28 → 2026-10-27,365 天,冻结规则不变)**
+### 0.1 头条
 
-| | 样本内 IS(246 天) | 留出期 HO(119 天) | **全年 FY** | FY 95% 区间(7 天块自助法) | 全年净利 |
+**头条:全年年化 51.1% [33, 71](本金 1000 万 USDT,保守成本口径 `cons`,k_imp=4,0h 出场)**
+
+| | 样本内 IS(246 天) | 留出期 HO(119 天) | **全年 FY**(2025-10-28 → 2026-10-27) | FY 95% 区间(7 天块自助法) | 全年净利 |
 |---|---|---|---|---|---|
-| **10M `cons`** | 50.2% | 31.8% | **44.1%** | **[27, 63]** | **约 441 万 U** |
-| 20M `cons` | 22.1% | 15.9% | 20.1% | [11, 30] | 约 401 万 U |
+| **10M `cons`, k=4, 0h** | 61.0% | 30.3% | **51.1%** | **[33, 71]** | **约 511 万 U** |
+| 20M `cons`, k=4, 0h | 28.5% | 15.2% | 24.2% | [15, 34] | 约 484 万 U |
 
-**同一口径下,结果对 `k_imp` 极其敏感**(`k_imp` = 我们占某币 1% 未平仓量,会把资金费率抬高多少 bp/8h;**默认 4,从未用实盘标定**)。FY 年化 %,每个数都是单独重跑的:
+0h 出场 = “最近 24 小时累计资金费率转正”一成立就出场,不等待(按只看 IS 的事先规则选出,§9d/§9e)。区间只反映抽样波动,**不含模型不确定性**。这是历史模拟,不是实盘承诺。
 
-| `k_imp` | 0 | 1 | 2 | 3 | **4(头条)** | 6 | 6.7 | 8 | 盈亏平衡 k(线性插值) |
-|---|---|---|---|---|---|---|---|---|---|
-| 10M `cons` | 119.4 | 99.9 | 80.9 | 62.0 | **44.1** | 9.9 | −1.5 | −20.7 | **≈ 6.6**(IS 6.62 / HO 6.72 / FY 6.61) |
-| 20M `cons` | 62.1 | 51.2 | 40.5 | 30.0 | **20.1** | 1.6 | −4.1 | −15.4 | ≈ 6.2 |
-| 10M HO 年化 | 85.0 | 71.2 | 57.7 | 44.6 | 31.8 | 8.2 | 0.2 | −13.8 | ≈ 6.7 |
+### 0.2 `k_imp` 敏感性(请和头条一起引用;每格单独重跑,年化 %)
 
-读法:**k 每增加 1,10M 的年化约少 15–19pp**(k 在 0–4 区间约 19pp,k=4 附近约 16–17pp,k=4→8 约 16pp,6→8 约 15pp);真实冲击如果比默认大约 1.7 倍(k≈6.6–6.7),策略就不赚钱。**在用小额实盘标定 `k_imp` 之前,不应对外承诺任何年化数字**(建议先 50–100 万 USDT、1–2 个月的小额试验,量三件事:自身冲击、两条腿的成交时间差、真实成本)。**置信区间不含模型不确定性**(包括 `k_imp` 猜错、库存快照、成本代理、两腿同时成交假设),所以真实不确定性比 [27, 63] 宽得多。
+| `k_imp` | 0 | 1 | 2 | 3 | **4(头条)** | 6 | 8 | 盈亏平衡 k |
+|---|---|---|---|---|---|---|---|---|
+| 10M 全年 | 114.3 | 98.0 | 82.0 | 66.3 | **51.1** | 22.8 | −3.9 | ≈ 7.7 |
+| 20M 全年 | 57.4 | 48.8 | 40.4 | 32.2 | **24.2** | 9.7 | −3.6 | ≈ 7.5 |
+| 10M 留出期 | 75.1 | 63.5 | 52.1 | 41.1 | **30.3** | 10.6 | −7.4 | ≈ 7.1 |
 
-### 0.2 参考行(为什么不再用 57.6% 和 83%)
+`k_imp` = 我们占某币 1% 未平仓量会把资金费率抬高多少 bp/8h,默认 4,**从未用实盘标定**。k 每升 1,10M 年化约少 13–16pp。
 
-| 口径 | 10M IS | 10M HO | 10M FY [95% 区间] | 20M FY | 怎么理解 |
-|---|---|---|---|---|---|
-| **`cons`(头条,保守)** | 50.2 | 31.8 | **44.1** [27, 63] | 20.1 | 币数量 + 美元双上限;自身冲击在**所有**小时都计入(包括市场费率本来 ≥ 0 的小时);窗口末残余成本 ×3;只按亏损缩预算 |
-| `allC`(**乐观上界**) | 65.1 | 41.6 | 57.6 [41, 76] | 28.1 | 只修"市场本来为负的小时里,自身冲击把费率推成正数时被截成 0"这一点;**只是上界,不要当头条** |
-| 旧第八轮基线(**含 bug,已作废**) | 95.2 | 57.1 | 83.0 [64, 103] | 42.3 | **为什么高估**:引擎里 `e2 = min(e + 自身冲击, 0)`——自身冲击把本该为负的费率抬到正数时被截成 0,**只记了收入、从来没记过付款**;另外币数量上限按美元传入(价格下跌时能多卖币)、窗口末残余按最后收盘价一次性平掉,绕开 pov |
+### 0.3 KuCoin 现货版:不可行
 
-### 0.3 其他检验(都在 §9b;aggregate only)
+**KuCoin 现货 + 币安永续(在 KuCoin 卖自有现货,币安做多永续),同口径全年 7.4% [2.7, 12.8],比主版本低约 44pp,不可行。** 主因是 KuCoin 现货成交额只有币安约 4.6%(逐币中位数)/ 12.6%(合计),做不大;且卖现货的 U 留在 KuCoin,币安保证金要另出,实际资金占用接近名义额 2 倍。脚本 `kucoin/code/r12_run.py`,汇总 `kucoin/out/r12_kc_runs.csv`、`r12_kc_boot.csv`。
 
-- **按市价计算的占用 ≤ 本金(`f_mtmderisk=1`,已有默认关闭开关,`consM`)**:10M FY 45.2%(比 `cons` 高 **+1.1pp**,配对区间 [−0.1, +3.0],**统计上不显著**),20M +0.7pp [−0.1, +2.2]。只在 IS 触发(裁掉约 470 万 / 270 万名义额),HO 不受影响。峰值市价占用 `cons` 1.21×本金 → `consM` 1.07×(不是 ≤ 1.00,因为 pov 3% 限制了减仓速度)。
-- **`imp_size` 开关(新增,默认关)**:按自身冲击限制每次开仓大小 `q ≤ 50·|r8|·OI / k_imp`。k=4:10M FY 46.8%(+2.7pp [+2.0, +3.5]),20M 22.3%(+2.2pp [+1.4, +3.5]);加市价上限(`consMI`)48.1% / 22.6%;k=2 几乎无变化(+0.2 / +0.1pp)。
-- **20M 的两件事,要分开说(都成立,不是主次关系)**:① **本金翻倍利润不增长 = 容量封顶**(库存/成交量/pov):不计自身冲击(k=0)时 20M 净利 1242 万只比 10M 的 1194 万多约 4%,留出期两种本金净利完全相同(都约 104 万)。② **20M 没有多赚,可能略少(k=4:401 万 vs 441 万,配对差 −40 万,95% 区间 [−97, +2],统计上勉强)= 仓位大小没有考虑自己的冲击**:20M 平均占用更高(645 万 vs 591 万),资金费总收入却更低(5.12M vs 5.39M),多出来的仓位主要在付冲击成本。打开 `imp_size`(k=4)后净利 468 万 vs 446 万,少赚的差距从 0.40M 缩到 0.22M,**剩余差距尚未拆分**。
-- **两条腿同一小时同时成交的假设**:引擎假设每个小时现货腿与永续腿**都**成交,小时数据无法验证。敏感性:**现货腿晚 1 小时:10M 44.1% → 39.6%**(−4.5pp [−7.6, −1.5],区间 [22, 59]);20M 20.1% → 17.4%;永续腿晚 1 小时影响不显著(+0.6pp [−2.1, +3.3])。这只是敏感性,不是修复。
-- **窗口末残余**:`cons` 窗口末仍有约 **148 万 U** 名义额(k=0 时约 158 万),**在最后一根收盘价上记账**(成本 ×3)。压力测试(HO 净利,10M 与 20M 相同):×5 少赚 **3.8%**,×10 少赚 **8.6%**(FY 在 ×10 时只少 2.1%)。若按 pov 3% 分批平完,成交额加权平均约 **11 天**、最长约 **71 天**;**平仓期间的资金费和基差没有模拟**(数据止于 2026-10-27 23:00 UTC)。
+### 0.4 必须知道的限制(详见团队汇报 §6)
 
-### 0.4 必须知道的限制
+1. **容量封顶**:一年净利约 480–510 万 U,加本金不会多赚(20M 比 10M 少约 27 万)。
+2. **利润集中(事后排名)**:全年前 5 币约 46%;留出期前 5 币约 95%,9 月约占留出期 73%;去掉前 5 币留出期年化约 1.6%。
+3. **借来的币不归还、无利息,等同自有库存**;卖出不涉及保证金借贷。若有借币年息 r,需另扣 借币名义额×r。
+4. **保证金/强平**:现货腿卖的是自有库存,无保证金、无强平;永续腿 1 倍全额保证金(卖现货款当天划入合约账户,逐仓 1 倍),强平风险可忽略。**主要剩余风险是 ADL 和单腿成交**(现货腿晚 1 小时:51.1% → 46.6%)。
+5. `k_imp` 未标定;成本是币安公开数据代理;币池与库存是某日快照;HO 已被多轮看过,不是干净样本外。
+6. 建议先做几十万到约 100 万 USDT、1–2 个月的小额实盘试验,标定 k_imp、两腿时间差与真实成本,0h 与“等到下一次结算”并行。
 
-1. **容量封顶**:k=4 下一年净利大约 **400–440 万 U(保守 `cons`,10M/20M)**、上界 `allC` 约 **560–580 万 U**;即使不计自身冲击(k=0)也只有约 1190–1240 万 U。**加本金不会多赚**(10M→20M 净利不增反降)。
-2. **利润集中**(10M `cons`;前 5 币是**事后**按贡献排名的):全年前 5 个币贡献净利约 **54%**(20M 约 60%);留出期前 5 个币贡献约 **98%**(去掉前 5 币,HO 年化只剩约 0.7%)。按月:全年 2 月 28%、1 月 17%、9 月 16%、11 月 15%;留出期 **9 月占 HO 净利约 67%**,10 月为 −9%。(第 4 节里的"HO 约 51% 来自 9 月、前 5 币 64%"是第八轮旧口径,`cons` 下更集中。)
-3. **借币利息按 0 计,借来的币不归还**:引擎里卖出的现货来自“借币保留”(一次借到就一直占用、永不归还),**借币利息记为 0**。441 万(以及本文所有净利数字)依赖这一假设;若实际有借币年息 r,需另扣 借币名义额×r。
-4. **引擎没有保证金/强平/追加保证金模型**:卖空借来的现货、做多 1 倍永续,价格大涨时现货空头要追保,引擎不模拟;保守口径峰值市价占用约 1.21×本金(加市值上限 `consM` 后约 1.07×),也不是 1.00×。**单腿成交失败(只成交一条腿、出现裸露敞口)也没有建模**,只有“一条腿晚 1 小时”的敏感性(现货腿晚 1h:44.1%→39.6%)。
-5. `k_imp` 没标定(0.1);置信区间(7 天块,B=5000,seed 7)**只反映样本内抽样波动**,不含模型不确定性。
-6. 币池是某一天的库存快照(事后选择);库存数量(币数量上限)是今天的快照套用到全年;库存的真实来源与资金成本需要团队确认。
-7. 成本是币安公开数据代理,不是我们自己的成交;极端事件(下架、交割、ADL)只有代理指标。
-8. HO 在之前几轮已被看过,**不是干净的样本外**(第 4 节)。
-9. 公开仓库**不能一键复现**:缺私有库存表等输入(第 6 节);但 `results/r9/` 里有全部汇总结果和日度盈亏,可核对表格。
+> 下面第 1–4 节保留第八/九轮的旧口径(含 48h 出场、44.1% 等),**只作留痕,绝对数字以第 0 节为准**。
 
 ---
 
@@ -68,7 +59,7 @@
 |---|---|---|
 | 入场信号 | E7:预估资金费率足够负 | 费率"够负"才考虑 |
 | 入场闸门("算账式") | 预期收入(资金费 + 基差收敛)≥ m × 预计交易成本,**冻结用 m=2**(前几轮的旧闸门是 m=3)。**说明**:"约等于费率 ≤ −0.5%/8h 才进"只在旧的 m=3 上验证过(实测放行的最小费率是 −0.5%/8h);m=2 没有做过同样的检验,所以不能直接套用。这个闸门的优势也不稳(见第 4 节第 3 条) | 入场前用估算的成本过一道筛子;是否真的比"费率够负就进"更好,证据不足 |
-| 出场 | X5:费率不再为负的状态**连续确认 24–48 小时**才出场,**冻结用 48h** | 不要一回正就跑,避免来回交易 |
+| 出场 | X5:费率不再为负的状态**连续确认 24–48 小时**才出场,第八/九轮冻结用 48h;**终版改为 0h(条件一成立就出场,见第 0 节)** | 不要一回正就跑,避免来回交易 |
 | 仓位 | 1 倍永续对 1 倍现货名义额;单币受库存、同小时成交量 10%、OI 10%、参与率 pov 3%/小时约束(**新开仓/加仓**受这些约束;已持仓若超限,只做"强制降风险"且遵守 pov,见 3.2;**正常出场时是否守 pov 3% 取决于上游代码,本仓库没有验证**) | 小币做不大 |
 | 资金 | 10M USDT;库存口径 A(借来的币保留) | |
 | 成本 | 币安公开成交数据校准的冲击 + 半价差 + 手续费(现货 10bp、永续 5bp,吃单) | **是公开数据代理,不是我们自己的成交** |
@@ -144,13 +135,16 @@
 结论:**没有哪种方式稳定地比"吃单"好**。固定冲击下拆单不省钱、只会拖慢建仓;平方根冲击下挂单和拆单有些优势,但优势完全取决于"挂单能成交多少、会不会被逆向选择",这是小时数据**无法验证**的假设,需要小额实盘挂单实验。
 
 ### 3.6 KuCoin 现货 + Binance 永续(现货在 KuCoin 卖,永续在币安做多;第八轮,修复引擎)
+
+> **bfill 旧版,已被 7.4% 取代。** 本节的 19.6% / 3.6% / −75.9pp 来自带 `bfill`(轻微前视)的旧数据集和旧 48h 口径;终版(r12,去掉 bfill,cons + 0h)全年 **7.4% [2.7, 12.8]**,见第 0.3 节、`REPORT_signals.md` §9f。旧结果文件已移到 `kucoin/out/legacy_bfill/`。
+
 | 版本 | IS 年化 | HO 年化 | 相对币安现货版 |
 |---|---|---|---|
 | 币安现货 + 币安永续(冻结规则) | 95.2% | 57.1% | — |
 | **KuCoin 现货 + 币安永续(冻结规则)** | **19.6%** | **3.6%** | **−75.9pp / −53.6pp**(区间都不含 0) |
 
 - 币种:339 个中保留 318 个(KuCoin 有同名对),丢 21 个。
-- **主因不是价差,而是"能做多大"**:KuCoin 现货成交额只有币安的约 **2.6%(把每个币、每个小时的 KuCoin/币安成交额比值先取中位数,再对各币取中位数)**;**按总成交额加总算约 13%**。两种算法差别很大。成交量/pov 上限成为主约束,平均占用资金只有 IS 约 140 万 / HO 约 15 万 U。按占用资金算年化会高很多,但那只是极小规模,**不能外推到 10M**。
+- **主因不是价差,而是"能做多大"**:KuCoin 现货成交额只有币安的约 **4.6%(逐币全年成交额比的中位数)**、**合计约 12.6%**(终版口径;旧的 2.6% 算法有误,已作废)。成交量/pov 上限成为主约束,平均占用资金只有 IS 约 140 万 / HO 约 15 万 U。按占用资金算年化会高很多,但那只是极小规模,**不能外推到 10M**。
 - 在 KuCoin 版里,冻结规则在 HO 上比 v9 规则略差(−2.7pp,区间 [−4.9, −0.5]);m=2 闸门的成本是按币安校准的,没有按 KuCoin 现货重新校准。
 - 对成本几乎不敏感(费用 ×2、半价差 ×2 都只变 0.1–0.5pp),因为收益被容量限制而不是费用。
 - 永续腿杠杆与假想爆仓(不追加保证金、按小时最低价)——次数为"币×回合":
@@ -178,12 +172,14 @@
 8. 建议:先做 **50–100 万 USDT、1–2 个月的小额实盘试验**,用真实成交校准成本,再谈放大。
 
 ## 5. 目录
+- `team_report/`:团队汇报终版 PDF / Markdown 与图(只含汇总数字)。
+- **第十–十二轮(终版)**:`code/r10_run.py`、`r10_boot.py`、`r10_boot2.py`、`r10_comp.py`(两段式出场、0h 头条、k 表、自助法)、`code/r11_run.py`、`r11_ana.py`(0h vs 下一次结算/12h、事件统计、滚动检验);汇总在 `results/r10_r11/`(组合级日度/小时盈亏 npy 在 `results/r10_r11/r10_daily/`、`results/r10_r11/r11/`,不含逐币文件);KuCoin 第十二轮 `kucoin/code/r12_run.py`(已去掉 bfill 的 `build_kc_ds.py`),汇总 `kucoin/out/r12_*.csv`、`kc_universe.json`(318/339 个币)。
 - `REPORT_signals.md`:完整研究报告(预注册、第 1–9b 轮所有表格;**§9 开头的更新横幅与 §9b 取代 §9 的"57.6% 主结论"**;§9b.1–9b.9 含保守口径、k_imp 敏感性、`imp_size`、两腿延迟、20M vs 10M)。
 - `code/`:引擎(`engine_v12s.py`,第九轮新增默认关闭的开关 `fx_fund, fx_eq, res_mode, res_mult, leg_dly, f_coin` 和 `imp_size`;`derisk_force=1` 旧 / `=2` 新默认)、数据封装(`lib12s.py`)、各轮脚本;**第九轮**:`r9_run.py`(跑一组口径)、`r9_boot.py`(7 天块自助法与配对差)、`make_report9.py`;其余为第 1–8 轮脚本(`run_signals.py`、`run_adapt*.py`、`run_cap70.py`、`run_exec.py`、`run_r7*.py`、`r7_v9boot339.py`、`calib_dl.py` 等)。
 - `results/`:**只含汇总结果**(第 1–8 轮:`cap70.csv`、`exec_modes.csv`、`r7_*.csv` 等;`results/legacy_derisk1/` 旧引擎结果仅供审计)。
 - `results/r9/`:**第九/九b轮**汇总:`r9_all_runs.csv`、`r9_bootstrap.csv`、`r9b_all_runs.csv`(186 行,头条/k 网格/`imp_size`/两腿延迟/残余倍数)、`r9b_bootstrap.csv`、各口径分表,以及 `daily_hourly_pnl/*.npy`(只含 base/cons/consM/allC/allCM/cons_dS 在 10M、20M 的组合级小时盈亏,可画净值曲线)。**没有逐币或数量字段。**
 - `v9cmp/`:v9 对照脚本与汇总。
-- `kucoin/`:KuCoin 变体(`PREREG_kucoin.md` 预注册与事后更正、`code/`、`out/` 汇总)。
+- `kucoin/`:KuCoin 变体(`PREREG_kucoin.md` 预注册与事后更正、`code/`、`out/` 汇总;`out/kucoin_half_spread.csv` = 公开盘口半价差快照;`out/legacy_bfill/` = bfill 旧版 kc_main/kc_boot,已被 7.4% 取代)。
 
 ## 6. 怎么复现(诚实声明:不能一键复现)
 本仓库**不含**下列输入,所以只能核对汇总表与代码逻辑,不能原样重跑:
@@ -196,27 +192,70 @@
 
 补齐后的运行顺序:
 ```
-python code/calib_dl.py bd <coins.txt>      # 订单簿校准
-python code/calib_dl.py ag <coins.txt>      # 成交校准
-python code/run_r7_is.py gate IS            # 第七轮 IS 闸门网格
-python code/run_r7_is.py exits IS           # IS 出场网格
-python code/run_r7_is.py exits HO           # HO 出场(各跑一次)
-python code/run_r7.py                       # 第八轮修复引擎主表;NFB_DERISK=1 复现旧引擎
-python code/r7_boot.py                      # 7 天块自助置信区间
-python code/r7_v9boot.py                    # 对 v9 的区间(原引擎、币池 267)
-python code/r7_v9boot339.py                 # 对 v9 规则同环境区间(币池 339)
-python code/run_cap70.py                    # 70M 容量
-python code/run_exec.py                     # 执行方式对比
-python kucoin/code/run_kc.py                # KuCoin 变体
+python3 code/calib_dl.py bd <coins.txt>      # 订单簿校准
+python3 code/calib_dl.py ag <coins.txt>      # 成交校准
+python3 code/run_r7_is.py gate IS            # 第七轮 IS 闸门网格
+python3 code/run_r7_is.py exits IS           # IS 出场网格
+python3 code/run_r7_is.py exits HO           # HO 出场(各跑一次)
+python3 code/run_r7.py                       # 第八轮修复引擎主表;NFB_DERISK=1 复现旧引擎
+python3 code/r7_boot.py                      # 7 天块自助置信区间
+python3 code/r7_v9boot.py                    # 对 v9 的区间(原引擎、币池 267)
+python3 code/r7_v9boot339.py                 # 对 v9 规则同环境区间(币池 339)
+python3 code/run_cap70.py                    # 70M 容量
+python3 code/run_exec.py                     # 执行方式对比
+python3 kucoin/code/run_kc.py                # KuCoin 变体
 
 # 第九 / 九b 轮(本金用 NFB_S 控制;口径写法 cons[M][I][_k<k>][_r<mult>][_dS|_dP],
 #   M=市价占用上限, I=imp_size, _k=自身冲击系数, _r=残余成本倍数, _dS/_dP=现货/永续腿晚 1 小时)
 export SIGNALS_ROOT=. NFB_OUT=out/ NFB_DAILY=out/r9_daily/ NFB_QTY_CAP=<你的币数量表.csv>
-NFB_S=1e7 python code/r9_run.py <tag>        # 输出 out/r9_<tag>_S10M.csv(tag 与口径列表见脚本内 getfix)
-NFB_S=2e7 python code/r9_run.py <tag>
-python code/r9_boot.py <口径列表> <输出.csv>   # 7 天块自助法 + 与 cons 的配对差(dc_* 列)
-NFB_REPORT_OUT=round9.md python code/make_report9.py
+NFB_S=1e7 python3 code/r9_run.py <tag>        # 输出 out/r9_<tag>_S10M.csv(tag 与口径列表见脚本内 getfix)
+NFB_S=2e7 python3 code/r9_run.py <tag>
+python3 code/r9_boot.py <口径列表> <输出.csv>   # 7 天块自助法 + 与 cons 的配对差(dc_* 列)
+NFB_REPORT_OUT=round9.md python3 code/make_report9.py
+
+# ---- 第十–十二轮的运行环境(私有输入由你自己提供,均不在本仓库)----
+export SIGNALS_ROOT=.                       # 本仓库根目录
+export NFB_OUT=out/                         # 结果输出目录
+export NFB_DATA_DIR=<你的数据目录>            # 私有数据目录(lib12s.py import 时即要求)
+export NFB_HOLDINGS_CAP=<你的 cap_usdt.csv>   # 私有、自备:逐币美元库存上限,两列 fut_symbol,cap_usdt(lib12s.py import 时即要求)
+export NFB_QTY_CAP=<你的 cap_qty_token.csv>   # **r10–r12 必需**(它们 import r9_run,缺此变量即 KeyError);私有、自备:逐币币数量上限,两列 fut_symbol,cap_qty_token
+export NFB_DS_DIR=<数据集目录,含 dataset.npz / dataset_meta.csv>   # lib12s.py:16 与 dl_kucoin.py 读取;未设时回退到 V11_DS(默认 ./upstream/v11_full/data/ds)
+export V11_DS=$NFB_DS_DIR                    # build_kc_ds.py 读 NFB_DS_DIR_BASE,未设时回退到 V11_DS
+export UPSTREAM_V10=<上游 v10 仓库>           # 上游 v10 代码(code/、borrow_lag/)
+export UPSTREAM_V11_CODE=<上游 v11_full/code> # 上游 v11 代码
+export V12_PURE_CODE=<上游 v12_pure/code>     # 上游 v12 纯净版代码
+# calib/:逐币冲击校准目录(r7_lib.py 读取;CALIB_DIR 可改路径),由 calib_dl.py 生成,私有、不入库
+mkdir -p out && cp -r results/r10_r11/* out/     # 汇总 CSV 与组合级 npy 放到脚本读取的 out/ 下(r10_boot*/r10_comp/r11_ana/r12_run 需要;r11_ana 的 buckets 部分另需逐币 npy,不入库,无法复现)
+
+# 最小验证(约 1 分钟):应输出 FY ann=51.07、episodes=1776
+NFB_S=1e7 python3 code/r11_run.py cons_c0 FY 1 smoke
+
+# 第十轮(终版头条:cons + 0h 出场;用法 r10_run.py <口径,逗号分隔> <窗口> <进程数> <tag>,输出 out/r10_<tag>_S10M.csv / S20M.csv)
+#   口径写法 cons[_c<h>|_x2a|_x2b][_k<k>][_r<mult>][_dS|_dP][_u1];c0 = 0h(头条),c8/c12/c24 = 确认窗口,不写 = 48h 旧参照
+export NFB_DAILY=out/r10_daily/
+for S in 1e7 2e7; do
+  NFB_S=$S python3 code/r10_run.py cons,cons_c0,cons_c12,cons_c24,cons_x2a,cons_x2b IS,HO,FY 6 a          # 出场候选(k=4)
+  NFB_S=$S python3 code/r10_run.py cons_k0,cons_c0_k0,cons_c12_k0,cons_c24_k0,cons_x2a_k0,cons_x2b_k0,cons_c12_k2,cons_x2b_k2,cons_c12_k6,cons_x2b_k6 IS,HO,FY 6 b
+  NFB_S=$S python3 code/r10_run.py cons_k2,cons_c0_k2,cons_x2a_k2,cons_c24_k2,cons_k6,cons_c0_k6,cons_x2a_k6,cons_c24_k6 IS,HO,FY 6 k
+  NFB_S=$S python3 code/r10_run.py cons_c0_k1,cons_c0_k3,cons_c0_k5,cons_c0_k7,cons_c0_k8,cons_c0_k9,cons_c0_k10,cons_c0_k11,cons_c0_k12,consM_c0,consI_c0,consI_c0_k2,cons_c0_dS,cons_c0_dP,cons_c0_r1,cons_c0_r5,cons_c0_r10,allC_c0,allC_c0_k0,consM_c0_k2,consM_c0_k6 IS,HO,FY 6 c   # k 表与其他检验
+  NFB_S=$S python3 code/r10_run.py cons_c8,cons_c8_k0,cons_c8_k2,cons_c8_k6 IS,HO,FY 6 d
+  NFB_S=$S python3 code/r10_run.py cons_u1,cons_c0_u1 FY 2 e
+done
+python3 code/r10_boot.py                       # -> out/r10_bootstrap.csv(对 48h 参照)
+python3 code/r10_boot2.py                      # -> out/r10_bootstrap2.csv(对 0h 参照;头条 51.1% [33, 71])
+python3 code/r10_comp.py                       # -> out/r10_comp.json / r10_comp_tables.md(k 表、盈亏平衡、集中度、残余)
+
+# 第十一轮(0h vs 等到下一次结算 / 12h;_cns = 下一次结算,_e8 = 单次结算转正定义;输出 out/r11_grid_S10M.csv 与 out/r11/*.npy)
+NFB_S=1e7 python3 code/r11_run.py cons_c0_k0,cons_c0_k2,cons_c0,cons_c0_k6,cons_cns_k0,cons_cns_k2,cons_cns,cons_cns_k6,cons_c12_k0,cons_c12_k2,cons_c12,cons_c12_k6,cons_c24_k0,cons_c24_k2,cons_c24,cons_c24_k6,cons_k0,cons_k2,cons,cons_k6,cons_x2a_k0,cons_x2a_k2,cons_x2a,cons_x2a_k6,cons_x2b_k0,cons_x2b_k2,cons_x2b,cons_x2b_k6,cons_c0_k0_e8,cons_c0_k2_e8,cons_c0_e8,cons_c0_k6_e8,cons_cns_k0_e8,cons_cns_k2_e8,cons_cns_e8,cons_cns_k6_e8,cons_c12_k0_e8,cons_c12_k2_e8,cons_c12_e8,cons_c12_k6_e8,cons_c24_k0_e8,cons_c24_k2_e8,cons_c24_e8,cons_c24_k6_e8,cons_k0_e8,cons_k2_e8,cons_e8,cons_k6_e8,cons_x2a_k0_e8,cons_x2a_k2_e8,cons_x2a_e8,cons_x2a_k6_e8,cons_x2b_k0_e8,cons_x2b_k2_e8,cons_x2b_e8,cons_x2b_k6_e8 IS,HO,FY 6 grid
+python3 code/r11_ana.py                        # -> out/r11_paired.csv / r11_walkforward.csv / r11_buckets.csv / r11_eventstudy.csv
+#   注意:r11_ana 的第 3 部分(size buckets → r11_buckets.csv)读逐币文件 out/r11/*__FY__coin.npy;出于隐私这些文件不入库,
+#   只靠公开文件无法复现这一部分(仓库里的 results/r10_r11/r11_buckets.csv 是作者本地结果);其余部分可用仓库内组合级 npy 复现。
+
+# 第十二轮 KuCoin 现货 + 币安永续(cons_c0, 10M;需先用 dl_kucoin.py、build_kc_ds.py 建 kucoin/ds;配对差需要上面 r11 的 out/r11/*.npy)
+python3 kucoin/code/dl_kucoin.py && python3 kucoin/code/build_kc_ds.py
+#   注意:dl_kucoin.py 重新下载的 KuCoin K 线不保证与原快照完全一致(交易所可能修订/下架数据),复跑结果可能与 7.4% 有小幅出入
+python3 kucoin/code/r12_run.py                 # -> kucoin/out/r12_kc_runs.csv / r12_kc_boot.csv(全年 7.4% [2.7, 12.8])
 ```
 
 ## 7. 隐私
-仓库内没有:持仓清单、逐币库存/数量/额度、API key、逐币校准表、逐币静态半价差、个人姓名。`results/r9/` 只含组合级汇总。**未设置开源许可证。**
+仓库内没有:持仓清单、逐币库存/数量/额度、API key、逐币校准表、个人姓名。唯一的逐币成本文件是 `kucoin/out/kucoin_half_spread.csv`:**KuCoin 公开盘口快照**(2026-11,20 次买一/卖一快照的逐币半价差中位数),是公开数据,不含任何持仓或库存。`results/r9/` 只含组合级汇总。**未设置开源许可证。**

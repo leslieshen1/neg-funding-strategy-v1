@@ -5,7 +5,9 @@ HERE = os.path.dirname(os.path.abspath(__file__)); K = os.path.join(HERE, "..");
 BASE = os.environ.get("NFB_DS_DIR_BASE", _os.environ.get("V11_DS", "./upstream/v11_full/data/ds")); OUTD = K + "/ds"; os.makedirs(OUTD, exist_ok=True)
 z = dict(np.load(BASE + "/dataset.npz")); m = pd.read_csv(BASE + "/dataset_meta.csv"); T, N = z["sc"].shape
 sy = pd.read_csv(RAW + "/kucoin_symbols_usdt.csv").set_index("baseCurrency")
-hs = pd.read_csv(K + "/out/kucoin_half_spread.csv").set_index("symbol").half_spread_med.to_dict() if os.path.exists(K + "/out/kucoin_half_spread.csv") else {}
+HSF = K + "/out/kucoin_half_spread.csv"
+if not os.path.exists(HSF): raise FileNotFoundError(HSF + " missing: KuCoin public half-spread snapshot is required (run kucoin/code/snap_spread.py; a new snapshot will not reproduce 7.4% exactly)")
+hs = pd.read_csv(HSF).set_index("symbol").half_spread_med.to_dict()
 T0 = int(pd.Timestamp("2025-10-01", tz="UTC").timestamp())
 new = {k: np.full((T, N), np.nan) for k in ("sv", "sc", "sq", "so", "sh", "sl")}
 keep = np.zeros(N, bool); rows = []; fsm = np.ones(N); tk = np.array(m.tick_s, float).copy(); hs_new = np.array(m.hs_s, float).copy()
@@ -13,7 +15,8 @@ hs_med = float(np.nanmedian([hs.get(s, np.nan) for s in sy.symbol if s in hs])) 
 for i, r in m.iterrows():
     b = r.spot[:-4]
     if b not in sy.index: rows.append((r.fut, "no_kucoin_pair")); continue
-    ks = sy.loc[b]; p = f"{RAW}/{ks.symbol}.csv"
+    ks = sy.loc[b]
+    p = f"{RAW}/{ks.symbol}.csv"
     if not os.path.exists(p): rows.append((r.fut, "no_download")); continue
     d = pd.read_csv(p); idx = ((d.t - T0) // 3600).astype(int).to_numpy(); ok = (idx >= 0) & (idx < T); d = d[ok]; idx = idx[ok]
     if len(d) < 200: rows.append((r.fut, "lt200_hours")); continue
@@ -39,7 +42,7 @@ K02, K1 = 0.26, 2.4
 for i in range(N):
     if not keep[i]: z["d02"][:, i] = 0; z["d1"][:, i] = 0; continue
     mv = pd.Series(np.minimum(np.nan_to_num(z["sq"][:, i]), np.nan_to_num(z["fq"][:, i]))).where(lambda s: s > 0)
-    base = np.nan_to_num(mv.rolling(24, min_periods=6).median().bfill().ffill().to_numpy())
+    base = np.nan_to_num(mv.rolling(24, min_periods=6).median().ffill().to_numpy())
     z["d02"][:, i] = K02 * base; z["d1"][:, i] = K1 * base
 np.savez_compressed(OUTD + "/dataset.npz", **z)
 m2 = m.copy(); m2["hs_s"] = hs_new; m2["tick_s"] = tk; m2["kc_keep"] = keep; m2["kc_status"] = [status.get(f, "?") for f in m.fut]; m2["fsm"] = fsm
