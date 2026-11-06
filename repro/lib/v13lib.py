@@ -40,7 +40,10 @@ def run_fix(fix, win, mask=None, extra=None, oi_frac=0.10, m=2.0):
     if eng:
         def g(name, _o=old, _e=eng): f = _o(name); f.update(_e); return f
         R9.getfix = g
-    fee_gate.configure(fee_match, L.MKO.get("fee_s"), L.MKO.get("fee_f"))
+    # Exec of lib12s rebinds _ns["MKO"]. run_headline and the copied run()
+    # both use that dict. L.MKO is the earlier object and stays empty.
+    book = _ns["MKO"]
+    fee_gate.configure(fee_match, book.get("fee_s"), book.get("fee_f"))
     try:
         f = R9.getfix(fix); ex = dict(conf_h=48.0); rk = {}
         if f.get("f_coin", 0) > 0.5: rk["capq"] = QTY
