@@ -31,17 +31,27 @@ RR.run = _ns["run"]
 
 def run_fix(fix, win, mask=None, extra=None, oi_frac=0.10, m=2.0):
     """fix = r10 token string e.g. 'cons_c0' / 'cons_c0_k6'; win in IS/HO/FY; extra = dict of engine param overrides (pov, vol_frac, cool_h, ...)."""
+    import fee_gate
+    eng = dict(extra or {})
+    same_hour = bool(eng.pop("same_hour", True))
+    fee_match = bool(eng.pop("fee_gate_match", False))
     EXTRA_OK["mask"] = mask; OIF["v"] = oi_frac
     old = R9.getfix
-    if extra:
-        def g(name, _o=old): f = _o(name); f.update(extra); return f
+    if eng:
+        def g(name, _o=old, _e=eng): f = _o(name); f.update(_e); return f
         R9.getfix = g
+    # Exec of lib12s rebinds _ns["MKO"]. run_headline and the copied run()
+    # both use that dict. L.MKO is the earlier object and stays empty.
+    book = _ns["MKO"]
+    fee_gate.configure(fee_match, book.get("fee_s"), book.get("fee_f"))
     try:
         f = R9.getfix(fix); ex = dict(conf_h=48.0); rk = {}
         if f.get("f_coin", 0) > 0.5: rk["capq"] = QTY
         ex.update(f)
-        r = RR.run_cfg(("r7", m), ex, "cal", win, True, rkw=rk)
-    finally: R9.getfix = old; EXTRA_OK["mask"] = None; OIF["v"] = 0.10
+        r = RR.run_cfg(("r7", m), ex, "cal", win, True, rkw=rk, same_hour=same_hour)
+    finally:
+        R9.getfix = old; EXTRA_OK["mask"] = None; OIF["v"] = 0.10
+        fee_gate.reset()
     return r
 
 def ann_of(r, win=None):

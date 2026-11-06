@@ -10,6 +10,7 @@ import engine_v12s as E
 mkp = E.mkp
 from rules import build_rules, trail_any
 from adl_signals import spike_arrays, trigger_mask
+from known_budget import prior_oi_row
 
 DS = Path(os.environ["NFB_DATA"]) / "ds"
 HC = os.environ["NFB_CAP_FILE"]   # execution team file: fut_symbol,cap_usdt,cap_qty_token
@@ -70,7 +71,7 @@ def run(D, S, mkm=0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, ok_t=None, oili
     LASTP.clear(); LASTP.update(params)
     arr = D.causal_min_arrays() if same_hour else D.arr; stk = D.streak_arr(params.pop("streak_thr", 0.001)); P = mkp(capital=S, **params)
     T = arr[0].shape[0]; N = D.N
-    oi = D.oih; oi = np.vstack([np.full((1, N), np.nan), oi[:-1]])
+    oi = prior_oi_row(D.oih)
     if same_hour:                                    # OI cap on the same-hour actual OI: min(prior-hour snapshot, start-of-hour, end-of-hour)
         oc = D.oih; on = np.vstack([oc[1:], np.full((1, N), np.nan)])
         oi = np.fmin(np.fmin(oi, oc), on)
@@ -83,14 +84,14 @@ def run(D, S, mkm=0, pen=0.002, pen_k=0.0, fshare=1.0, advw=1.0, ok_t=None, oili
     cap = cap_vec(D, S, universe)
     okn = np.ones((T, N), np.uint8) if ok_t is None else ok_t.astype(np.uint8)
     okn = okn * (cap > 0).astype(np.uint8)[None, :]
-    H = hh1 - hh0; used = np.zeros(H); cum = np.zeros(H); comp = np.zeros((H, 6)); epb = np.zeros((200000, 11)); diag = np.zeros(32); pos_rec = np.zeros((H, N)); xd = np.zeros(64)
+    H = hh1 - hh0; used = np.zeros(H); cum = np.zeros(H); comp = np.zeros((H, 6)); epb = np.zeros((200000, 11)); diag = np.zeros(32); pos_rec = np.zeros((H, N)); xd = np.zeros(64); acct = np.zeros((H, 4))
     o = D.ohlc
     res, blocked, lost_f = E.sim(hh0, hh1, *arr, dvv, oilim, D.hs_s, D.hs_f, D.r2, D.r5, okn, np.zeros((T, N), np.uint8), cap, np.zeros(N), D.mk, (np.zeros(N) if capq is None else np.asarray(capq, float)),
                                  D.oiv_for("hour", CASE["lag"]), D.ivh(), D.sigma(), stk, P, used, cum, epb, comp, diag, pos_rec,
-                                 o["so"], o["sh"], o["sl"], o["fo"], o["fh"], o["fl"], D.tk_s, D.tk_f, (D.dl_exit if dl_stop else np.full(D.N, 1e9)), D.dl_fin, xd, np.zeros((T, N)) if s24 is None else s24, profile(D), np.ones((3, T, N)) if xa is None else xa, getattr(D, "fsm", np.ones(D.N)))
+                                 o["so"], o["sh"], o["sl"], o["fo"], o["fh"], o["fl"], D.tk_s, D.tk_f, (D.dl_exit if dl_stop else np.full(D.N, 1e9)), D.dl_fin, xd, np.zeros((T, N)) if s24 is None else s24, profile(D), np.ones((3, T, N)) if xa is None else xa, getattr(D, "fsm", np.ones(D.N)), acct)
     price, fund, fees, cost, traded, nf, ne, ar = res.sum(axis=0)
     return dict(S=S, price=price, funding=fund, fees=fees, cost=cost, traded=traded, impact=2.0 * params.get("impact", 0.0) * traded, episodes=int(ne), fills=int(nf),
-                diag=diag, used=used, cum=cum, comp=comp, ep=epb[:int(min(ne, len(epb)))], years=R.years_of(window), pos=pos_rec, xd=xd, cap=cap, window=window)
+                diag=diag, used=used, cum=cum, comp=comp, ep=epb[:int(min(ne, len(epb)))], years=R.years_of(window), pos=pos_rec, xd=xd, cap=cap, window=window, accounts=acct)
 
 def summ(r, S):
     m = R.metrics(r); sl = V.slice_metrics(r, S)
