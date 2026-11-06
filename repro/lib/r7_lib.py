@@ -3,6 +3,7 @@ Everything is rolling / past-only; only aggregates are ever written out."""
 import sys; sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(__file__)))
 from run_adapt import *
 import lib12s as L
+import fee_gate
 CAL = __import__("os").environ["NFB_DATA"].rstrip("/") + "/calib/"
 SIGD = D.sigma(); DVD = D.dv
 LAGD = 24                                                  # a sample day is usable 24h after its last hour (past-only)
@@ -75,8 +76,8 @@ CAPV = L.cap_vec(D, S, "all")
 def slice_Q(): return np.minimum(0.03 * DVD / 24.0, np.where(CAPV > 0, CAPV, 1e18)[None, :])
 def leg_cost(Y):                       # one leg, one hourly slice
     return Y * SIGD * np.sqrt(slice_Q() / np.maximum(DVD, 1.0))
-def entry_cost(Y, Hm):                 # round trip: fees 0.30% + 4 legs impact + 2 x (hs_s + hs_f) x spread multiplier
-    return 0.0030 + 4 * leg_cost(Y) + 2 * (D.hs_s + D.hs_f)[None, :] * Hm
+def entry_cost(Y, Hm):                 # round trip: selected or historical fee + 4 legs impact + 2 x (hs_s + hs_f) x spread multiplier
+    return fee_gate.roundtrip() + 4 * leg_cost(Y) + 2 * (D.hs_s + D.hs_f)[None, :] * Hm
 def close_cost(Y, Hm):                 # exit only: fees 0.15% + 2 legs impact + (hs_s+hs_f)
     return 0.0015 + 2 * leg_cost(Y) + (D.hs_s + D.hs_f)[None, :] * Hm
 

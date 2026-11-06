@@ -43,7 +43,7 @@ class TestEntryThreshold(unittest.TestCase):
         r7 = (ROOT / "repro" / "lib" / "run_r7.py").read_text()
         self.assertIn('"E7": dict(entry_fav_n=ENTRY_FAV_N, entry_basis_n=-0.003)', signals)
         self.assertIn('"E1": dict(entry_fav_n=ENTRY_FAV_N_HISTORICAL)', signals)
-        self.assertIn("extra=dict(entry_fav_n=ENTRY_FAV_N)", headline)
+        self.assertIn("engine_extra(A.known_budget, A.fee_gate_match, A.open_residual, ENTRY_FAV_N)", headline)
         self.assertIn('BASEX = dict(ENTRY["E7"])', r7)
 
     def test_cli_smoke_without_private_data(self):

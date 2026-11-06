@@ -1,5 +1,6 @@
 """唯一入口：头条配置（10M 本金，cons 保守成本，k_imp=4，入场门槛 m=2，0h 出场 = v1 主线规则）的 IS / HO / FY 年化。
 默认进场：8h 归一资金费率严格低于 -0.001（entry_fav_n=0.001）。等于 -0.001 不进场。历史门槛 0.0005 仍是信号 E1，不是这条默认命令。
+默认记账三项：预算只用决策时已知的量和 OI；收入门槛的往返手续费等于所选 VIP 档；期末未成交不记成已平仓。对照旧记账用 --no-known-budget --no-fee-gate-match --no-open-residual。
 环境变量：NFB_DATA（含 ds/ 与 calib/）、NFB_CAP_FILE（执行团队提供的逐币上限 CSV）、NFB_ROOT（输出根目录，默认当前目录）。
 不打印任何逐币信息；分档统计只按"入场那一小时已知的 8h 等效预期资金费率 r8"汇总。
 
@@ -18,8 +19,11 @@
 分档（入场时 r8，8h 等效）：T1 > -0.1%；T2 -0.1%~-0.5%；T3 -0.5%~-1%；T4 <= -1%。
 --fee vip0 --exec taker 的 FY 51.07% 是历史门槛 entry_fav_n=0.0005 的审计记录，不是当前默认门槛的期望输出。"""
 import os, sys, json, argparse
-ap = argparse.ArgumentParser(description="默认进场要求 8h 归一资金费率严格低于 -0.001。等于 -0.001 不进场。历史门槛 0.0005 是信号 E1，不是默认。")
+ap = argparse.ArgumentParser(description="默认进场要求 8h 归一资金费率严格低于 -0.001。等于 -0.001 不进场。历史门槛 0.0005 是信号 E1，不是默认。默认同时打开已知预算、手续费门槛对齐和期末不伪平仓。")
 ap.add_argument("--fee", default="vip3", choices=["vip0", "vip3"])
+ap.add_argument("--known-budget", action=argparse.BooleanOptionalAction, default=True, help="预算和 OI 上限只用已知数据；当小时量只缩小成交")
+ap.add_argument("--fee-gate-match", action=argparse.BooleanOptionalAction, default=True, help="收入门槛的往返手续费使用所选 VIP 档，而不是固定 0.30 percent")
+ap.add_argument("--open-residual", action=argparse.BooleanOptionalAction, default=True, help="期末未成交保持持仓和估值，不虚构平仓")
 ap.add_argument("--exec", default="taker", choices=["taker", "perp_maker", "spot_maker", "tiered_perp", "tiered_spot"])
 ap.add_argument("--fill", type=float, default=0.5); ap.add_argument("--adv", type=float, default=0.5)
 ap.add_argument("--entry-tiers", default="T1,T2,T3,T4"); ap.add_argument("--json", default=None)
@@ -38,6 +42,7 @@ import numpy as np, v13lib
 from v13lib import run_fix, ann_of
 from run_signals import r8n
 from entry_threshold import ENTRY_FAV_N
+from headline_flags import engine_extra
 
 FEES = {"vip0": dict(fee_s=0.001, fee_s_mk=0.001, fee_f=0.0005, fee_f_mk=0.0002),
         "vip3": dict(fee_s=0.0006, fee_s_mk=0.0004, fee_f=0.00032, fee_f_mk=0.00012)}
@@ -53,12 +58,39 @@ def run(mode, win, mask):
     mko = dict(FEES[A.fee])
     if mode != "taker": mko.update(mkm=MKM[mode], pen=0.002, fshare=A.fill, advw=A.adv, advmode={"range": 3.0, "nextclose": 0.0, "basis": 2.0}[A.adv_mode], hx_off=(1.0 if A.hedge == "taker" else 0.0), gap_sym=(2.0 if A.gap == "off" else 0.0))
     v13lib._ns["MKO"].clear(); v13lib._ns["MKO"].update(mko)
-    r = run_fix("cons_c0", win, mask=mask, extra=dict(entry_fav_n=ENTRY_FAV_N)); ep = r["ep"]
+    extra = engine_extra(A.known_budget, A.fee_gate_match, A.open_residual, ENTRY_FAV_N)
+    r = run_fix("cons_c0", win, mask=mask, extra=extra); ep = r["ep"]
     net = ep[:, 3] - ep[:, 6]; tr = tier_of(r8n[ep[:, 1].astype(int), ep[:, 0].astype(int)]); hold = ep[:, 2] - ep[:, 1]
     tiers = {nm: dict(n=int((tr == nm).sum()), net_wan=float(net[tr == nm].sum() / 1e4), hold_h=float(hold[tr == nm].mean()) if (tr == nm).any() else 0.0) for nm, _, _ in TIERS}
     H = len(r["cum"]); xd = r["xd"]
-    return dict(ann=ann_of(r), n=len(ep), H=H, net_wan=r["cum"][-1] / 1e4, fund_wan=r["funding"] / 1e4, fees_wan=r["fees"] / 1e4, price_wan=r["price"] / 1e4,
-                cost_wan=r["cost"] / 1e4, traded_wan=r["traded"] / 1e4, gap_wan=xd[35] / 1e4, tiers=tiers)
+    realized = float(r["price"] + r["funding"] - r["fees"])
+    unrealized = float(r["comp"][-1, 5]) if H else 0.0
+    open_n = int(r["diag"][28])
+    flat = open_n == 0
+    marked = float(r["cum"][-1])
+    exposure = r["pos"].sum(axis=1) if H else np.zeros(0)
+    peak_eq = np.maximum.accumulate(np.r_[0.0, r["cum"]])
+    dd = float((peak_eq - np.r_[0.0, r["cum"]]).max()) if H else 0.0
+    acct = r.get("accounts")
+    identity = None
+    if A.open_residual and acct is not None and H:
+        row = acct[-1]
+        identity = float((row[0] - row[3] + row[1] + row[2]) - marked)
+        if abs(identity) > max(1.0, abs(marked) * 1e-8): raise SystemExit(f"incremental account identity failed by {identity}")
+    ann_marked = marked / S / (H / 8760.0) * 100
+    return dict(ann=(ann_of(r) if flat else None), ann_marked=ann_marked, ann_completed=(ann_of(r) if flat else None),
+                end_accounting=("open_mark" if A.open_residual else "fictional_flat"),
+                n=len(ep), open_episodes=open_n, H=H, net_wan=marked / 1e4,
+                realized_cash_wan=realized / 1e4, unrealized_wan=unrealized / 1e4,
+                fund_wan=r["funding"] / 1e4, fees_wan=r["fees"] / 1e4, price_wan=r["price"] / 1e4,
+                cost_wan=r["cost"] / 1e4, traded_wan=r["traded"] / 1e4, gap_wan=xd[35] / 1e4,
+                mean_exposure_usdt=float(exposure.mean()) if H else 0.0, peak_exposure_usdt=float(exposure.max()) if H else 0.0,
+                mean_used_usdt=float(r["used"].mean()) if H else 0.0, drawdown_usdt=dd,
+                capital_usdt=S, annualization_denominator_usdt=S, initial_account_cash="unspecified",
+                account_identity_error_usdt=identity, transfers="not_implemented",
+                spot_proceeds_are_perp_margin=False, margin_feasibility_verified=False,
+                timing="known budget and OI; current-hour VWAP is an hourly replay, not a tick fill; current-hour volume only shrinks the fill",
+                tiers=tiers)
 
 allow = set(A.entry_tiers.split(","))
 mask = None
@@ -69,12 +101,14 @@ for w in A.windows.split(","):
     if A.exec.startswith("tiered"):
         a = run("taker", w, mask); m = run(A.exec.replace("tiered", "").strip("_") + "_maker", w, mask)
         net = sum((a if k in ("T3", "T4") else m)["tiers"][k]["net_wan"] for k in ("T1", "T2", "T3", "T4"))
-        o = dict(ann=net * 1e4 / S / (a["H"] / 8760) * 100, net_wan=net, n=a["n"], H=a["H"],
-                 tiers={k: (a if k in ("T3", "T4") else m)["tiers"][k] for k in ("T1", "T2", "T3", "T4")}, note="按笔拼接：T3/T4 取 taker 运行，T1/T2 取 maker 运行")
+        o = dict(ann=net * 1e4 / S / (a["H"] / 8760) * 100, ann_marked=net * 1e4 / S / (a["H"] / 8760) * 100,
+                 ann_completed=None, open_episodes=a["open_episodes"] + m["open_episodes"], net_wan=net, n=a["n"], H=a["H"],
+                 tiers={k: (a if k in ("T3", "T4") else m)["tiers"][k] for k in ("T1", "T2", "T3", "T4")}, note="按笔拼接：T3/T4 取 taker 运行，T1/T2 取 maker 运行。这不是单一组合。")
     else:
         o = run(A.exec, w, mask)
     out[w] = o
-    print(f"{w}: 年化 {o['ann']:.2f}%  笔数 {o['n']}  净利 {o['net_wan']:.1f} 万U  | " + "  ".join(f"{k} n={v['n']} {v['net_wan']:.1f}万" for k, v in o["tiers"].items()), flush=True)
+    label = f"完成平仓年化 {o['ann']:.2f}%" if o["ann"] is not None else f"含未平仓估值年化 {o['ann_marked']:.2f}%（未完成平仓，分母 {S:.0f}，{o['H']} 小时）"
+    print(f"{w}: {label}  已平仓 {o['n']}  未平仓币 {o['open_episodes']}  净值 {o['net_wan']:.1f} 万U  | " + "  ".join(f"{k} n={v['n']} {v['net_wan']:.1f}万" for k, v in o["tiers"].items()), flush=True)
 if A.json:
     out["engine_params"] = {k: (float(v) if isinstance(v, (int, float, np.floating)) else str(v)) for k, v in v13lib._ns["LASTP"].items() if not hasattr(v, "shape")}
     json.dump(out, open(A.json, "w"), indent=1, default=float)
