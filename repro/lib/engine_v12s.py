@@ -304,6 +304,9 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
                 price = s * x * (fp_x - fp_avg[n]) + s * x * (sp_avg[n] - sp_x)
                 fees = x * fp_x * fee_f + x * sp_x * (fee_s*fsm[n])
                 cost = x * last_fc[n] * cf + x * last_sc[n] * cs
+                if acct_book > 0.5 and s > 0:
+                    a_cash -= x * sp_x * (1.0 + fee_s * fsm[n])
+                    b_wallet += x * (fp_x - fp_avg[n]) - x * fp_x * fee_f
                 tp[li] += price; tfe[li] += fees; tc[li] += cost; cost_ep[n] += cost; tu[li] += x * last_sc[n]; nfill[li] += 1
                 ep_price[n] += price; fees_ep[n] += fees; nfill_ep[n] += 1.0
                 xd[41] += x * last_sc[n]; xd[42] += fees + cost; xd[48] += price + cost
@@ -564,6 +567,8 @@ def sim(t0, t1, sv, sc, sq, fv, fc, fq, ev, r8, r8s, d02, d1, dv, oilim, hs_s, h
             if s < 0: used_pos -= used_n[n] * frac * capf[n]
             used_n[n] *= (1 - frac)
             if pos[n] <= 1e-12 or (pos[n] * spot_mid < 1e-6):
+                if acct_book > 0.5 and s > 0 and pos[n] > 0.0:
+                    a_cash -= pos[n] * sp_avg[n]
                 pos[n] = 0.0; last_close[n] = t
                 used_cap -= used_n[n] * capf[n]
                 if s < 0: used_pos -= used_n[n] * capf[n]

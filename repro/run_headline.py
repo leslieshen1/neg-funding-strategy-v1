@@ -74,9 +74,13 @@ def run(mode, win, mask):
     acct = r.get("accounts")
     identity = None
     if A.open_residual and acct is not None and H:
-        row = acct[-1]
-        identity = float((row[0] - row[3] + row[1] + row[2]) - marked)
-        if abs(identity) > max(1.0, abs(marked) * 1e-8): raise SystemExit(f"incremental account identity failed by {identity}")
+        led = acct[:, 0] - acct[:, 3] + acct[:, 1] + acct[:, 2]
+        err = led - r["cum"]
+        worst = int(np.argmax(np.abs(err)))
+        identity = float(err[worst])
+        tol = max(1.0, abs(float(r["cum"][worst])) * 1e-8)
+        if abs(identity) > tol:
+            raise SystemExit(f"incremental account identity failed at hour {worst} by {identity}")
     ann_marked = marked / S / (H / 8760.0) * 100
     return dict(ann=(ann_of(r) if flat else None), ann_marked=ann_marked, ann_completed=(ann_of(r) if flat else None),
                 end_accounting=("open_mark" if A.open_residual else "fictional_flat"),

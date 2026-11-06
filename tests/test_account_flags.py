@@ -81,6 +81,39 @@ class TestAccountFlags(unittest.TestCase):
         self.assertEqual(flat[3][28], 0)
         self.assertNotAlmostEqual(flat[1][-1], cum[-1], places=6)
 
+    def test_delivery_partial_derisk_and_funding_stay_in_balance(self):
+        T, N = 24, 2
+        px = np.zeros((T, N))
+        px[:, 0] = 20.0
+        for t in range(T):
+            px[t, 1] = 80.0 - t
+        sq = np.full((T, N), 1.0e6)
+        sq[9:, 0] = 100.0
+        ev = np.zeros((T, N)); ivh = np.zeros((T, N))
+        ev[8, 1] = -0.004; ivh[8, 1] = 8
+        ev[16, 1] = -0.003; ivh[16, 1] = 8
+        r8 = np.full((T, N), -0.02)
+        s24 = np.zeros((T, N)); s24[6:, 1] = 0.01
+        P = E.mkp(entry_fav_n=0.001, entry_basis_n=1.0, xmode=5.0, x_obs=1.0, conf_h=1.0, exit_fav_n=-1e9,
+                  derisk=1.0, derisk_force=2.0, f_hardcap=1.0, vol_frac=0.02, f_exitpov=1.0, wind_down_h=0.0,
+                  f_prior=1.0, res_mode=3.0, acct_book=1.0, f_budget=1.0, f_exitlag=1.0, capital=1e7, pov=0.5,
+                  add_n=1.0, impact=0.001, spread_mult=1.0, fee_s=0.0006, fee_f=0.00032, k_imp=4.0, fx_fund=2.0,
+                  f_markfund=1.0, sqrt_y=0.0)
+        cum = np.zeros(T); comp = np.zeros((T, 6)); ep = np.zeros((40, 11)); diag = np.zeros(32)
+        pos = np.zeros((T, N)); xd = np.zeros(64); acct = np.zeros((T, 4)); used = np.zeros(T)
+        E.sim(0, T, px, px, sq, px, px, sq, ev, r8, np.zeros((T, N)), np.full((T, N), 1e12), np.full((T, N), 1e12),
+              np.full((T, N), 1e5), np.full((T, N), 5e4), np.array([1e-4, 2e-4]), np.array([1e-4, 2e-4]),
+              np.ones(N), np.ones(N), np.ones((T, N), np.uint8), np.zeros((T, N), np.uint8), np.full(N, 1e7), np.zeros(N),
+              px, np.zeros(N), np.full((T, N), 1e6), ivh, np.full((T, N), 0.03), np.zeros((T, N)), P, used, cum, ep, comp, diag, pos,
+              px, px, px, px, px, px, np.full(N, 0.01), np.full(N, 0.01), np.array([10.0, 1e9]), np.array([14.0, 1e9]),
+              xd, s24, np.ones((T, N)), np.ones((3, T, N)), np.ones(N), acct)
+        gap = acct[:, 0] - acct[:, 3] + acct[:, 1] + acct[:, 2] - cum
+        self.assertLess(np.max(np.abs(gap)), 1e-6)
+        self.assertEqual(pos[-1, 0], 0.0)
+        self.assertGreater(pos[10, 0], 0.0)
+        self.assertGreater(pos[-1, 1], 0.0)
+        self.assertGreater(diag[28], 0.0)
+
     def test_vip3_gate_fee_and_flag_isolation(self):
         self.assertEqual(roundtrip(), 0.0030)
         configure(True, 0.0006, 0.00032)
