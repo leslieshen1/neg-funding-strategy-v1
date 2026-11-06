@@ -1,4 +1,5 @@
 """唯一入口：头条配置（10M 本金，cons 保守成本，k_imp=4，入场门槛 m=2，0h 出场 = v1 主线规则）的 IS / HO / FY 年化。
+默认进场：8h 归一资金费率严格低于 -0.001（entry_fav_n=0.001）。等于 -0.001 不进场。历史门槛 0.0005 仍是信号 E1，不是这条默认命令。
 环境变量：NFB_DATA（含 ds/ 与 calib/）、NFB_CAP_FILE（执行团队提供的逐币上限 CSV）、NFB_ROOT（输出根目录，默认当前目录）。
 不打印任何逐币信息；分档统计只按"入场那一小时已知的 8h 等效预期资金费率 r8"汇总。
 
@@ -15,9 +16,9 @@
   --entry-tiers  只允许在这些档位入场（如 T2,T3,T4），用于"分档信号"对比，默认全部
   --json   把结果（含分档统计）写到这个文件
 分档（入场时 r8，8h 等效）：T1 > -0.1%；T2 -0.1%~-0.5%；T3 -0.5%~-1%；T4 <= -1%。
-复现：--fee vip0 --exec taker 必须得到 FY 51.07%（旧头条）。"""
+--fee vip0 --exec taker 的 FY 51.07% 是历史门槛 entry_fav_n=0.0005 的审计记录，不是当前默认门槛的期望输出。"""
 import os, sys, json, argparse
-ap = argparse.ArgumentParser()
+ap = argparse.ArgumentParser(description="默认进场要求 8h 归一资金费率严格低于 -0.001。等于 -0.001 不进场。历史门槛 0.0005 是信号 E1，不是默认。")
 ap.add_argument("--fee", default="vip3", choices=["vip0", "vip3"])
 ap.add_argument("--exec", default="taker", choices=["taker", "perp_maker", "spot_maker", "tiered_perp", "tiered_spot"])
 ap.add_argument("--fill", type=float, default=0.5); ap.add_argument("--adv", type=float, default=0.5)
@@ -36,6 +37,7 @@ sys.argv = sys.argv[:1]
 import numpy as np, v13lib
 from v13lib import run_fix, ann_of
 from run_signals import r8n
+from entry_threshold import ENTRY_FAV_N
 
 FEES = {"vip0": dict(fee_s=0.001, fee_s_mk=0.001, fee_f=0.0005, fee_f_mk=0.0002),
         "vip3": dict(fee_s=0.0006, fee_s_mk=0.0004, fee_f=0.00032, fee_f_mk=0.00012)}
@@ -51,7 +53,7 @@ def run(mode, win, mask):
     mko = dict(FEES[A.fee])
     if mode != "taker": mko.update(mkm=MKM[mode], pen=0.002, fshare=A.fill, advw=A.adv, advmode={"range": 3.0, "nextclose": 0.0, "basis": 2.0}[A.adv_mode], hx_off=(1.0 if A.hedge == "taker" else 0.0), gap_sym=(2.0 if A.gap == "off" else 0.0))
     v13lib._ns["MKO"].clear(); v13lib._ns["MKO"].update(mko)
-    r = run_fix("cons_c0", win, mask=mask); ep = r["ep"]
+    r = run_fix("cons_c0", win, mask=mask, extra=dict(entry_fav_n=ENTRY_FAV_N)); ep = r["ep"]
     net = ep[:, 3] - ep[:, 6]; tr = tier_of(r8n[ep[:, 1].astype(int), ep[:, 0].astype(int)]); hold = ep[:, 2] - ep[:, 1]
     tiers = {nm: dict(n=int((tr == nm).sum()), net_wan=float(net[tr == nm].sum() / 1e4), hold_h=float(hold[tr == nm].mean()) if (tr == nm).any() else 0.0) for nm, _, _ in TIERS}
     H = len(r["cum"]); xd = r["xd"]

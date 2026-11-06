@@ -4,6 +4,7 @@ sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(_
 import lib12s as L12
 from lib12s import *
 import lib12s
+from entry_threshold import ENTRY_FAV_N, ENTRY_FAV_N_HISTORICAL
 OUT = os.environ.get("NFB_OUT", "./out/").rstrip("/") + "/"   # output dir (env NFB_OUT; default = original path)
 D = load(); N = D.N; S = float(os.environ.get("NFB_S", 1e7)); T = D.arr[0].shape[0]
 ret, oic = spike_arrays(D); ADL_MASK, _ = trigger_mask(ret, oic, 0.10, 0.0, 24)
@@ -32,8 +33,8 @@ oi = D.oih; coin_oi = np.where((oi > 0) & (shift(fc, 1) > 0), oi / shift(fc, 1),
 cs_ = shift(coin_oi, 1)                                              # use hour t-1's snapshot (same 1h-stale convention as the engine's OI limit)
 MASK["E6"] = np.isfinite(cs_) & np.isfinite(shift(cs_, 24)) & (cs_ > shift(cs_, 24))
 MASK["E7"] = E_all
-ENTRY = {"E1": dict(entry_fav_n=0.0005), "E2": dict(entry_fav_n=0.0010), "E3": dict(entry_fav_n=0.0005, n_streak=2, streak_thr=0.0005, big_thr=0.0),
-         "E4": dict(entry_fav_n=1e-9), "E5": dict(entry_fav_n=0.0005), "E6": dict(entry_fav_n=0.0005), "E7": dict(entry_fav_n=0.0005, entry_basis_n=-0.003)}
+ENTRY = {"E1": dict(entry_fav_n=ENTRY_FAV_N_HISTORICAL), "E2": dict(entry_fav_n=0.0010), "E3": dict(entry_fav_n=0.0005, n_streak=2, streak_thr=0.0005, big_thr=0.0),
+         "E4": dict(entry_fav_n=1e-9), "E5": dict(entry_fav_n=0.0005), "E6": dict(entry_fav_n=0.0005), "E7": dict(entry_fav_n=ENTRY_FAV_N, entry_basis_n=-0.003)}
 EXIT = {"X1": dict(xmode=1.0, exit_fav_n=1e-9, wait_max_n=0), "X2": dict(xmode=2.0, exit_fav_n=-1e9, wait_max_n=0), "X3": dict(xmode=3.0, exit_fav_n=-1e9, wait_max_n=0),
         "X4": dict(xmode=4.0, exit_fav_n=-1e9, wait_max_n=0), "X5": dict(xmode=5.0, exit_fav_n=-1e9, wait_max_n=0),
         "X6": dict(xmode=6.0, exit_fav_n=-1e9, wait_max_n=0, x6_thr=0.0001), "X7": dict(xmode=7.0, exit_fav_n=-1e9, wait_max_n=0, x7_h=168.0)}
